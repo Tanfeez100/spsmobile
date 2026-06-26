@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Star Public School",
+    "slug": "sps-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/logo.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./src/assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f6f1e7"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.sps.schoolmobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/logo.png",
+        "backgroundColor": "#f6f1e7"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
