@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Expo and React Native local state
+.expo/
+.expo-profile/
+web-build/
+dist/
+build/
+
+# Local verification/export output
+.tmp-*/
+tmp/
+temp/
+
+# Native build output
+android/.gradle/
+android/app/build/
+ios/build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
