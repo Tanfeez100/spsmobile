@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   KeyboardAvoidingView,
   Image,
   Platform,
@@ -17,7 +18,6 @@ import {
 } from "react-native";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import {
-  API_BASE_URL,
   getAttendanceBootstrap,
   getAttendanceRecords,
   getHolidayCalendar,
@@ -27,6 +27,8 @@ import {
   getSubjectsForClass,
   loginStudent,
   loginTeacher,
+  registerAuthRefreshHandler,
+  refreshTeacherToken,
   saveAttendance,
   submitMarks,
 } from "./src/api/client";
@@ -73,6 +75,32 @@ const studentTabs = [
 
 const getAccessToken = (data) => data?.session?.access_token || data?.access_token || "";
 const getRefreshToken = (data) => data?.session?.refresh_token || data?.refresh_token || "";
+const getTokenExpiresAt = (data) => {
+  const tokenInfoExpiresAt = data?.token_info?.expires_at;
+  if (tokenInfoExpiresAt) return tokenInfoExpiresAt;
+
+  const sessionExpiresAt = data?.session?.expires_at;
+  if (typeof sessionExpiresAt === "number") {
+    return new Date(sessionExpiresAt * 1000).toISOString();
+  }
+
+  const expiresIn = data?.session?.expires_in || data?.expires_in;
+  if (Number.isFinite(Number(expiresIn))) {
+    return new Date(Date.now() + Number(expiresIn) * 1000).toISOString();
+  }
+
+  return new Date(Date.now() + 25 * 60 * 1000).toISOString();
+};
+
+const shouldRefreshTeacherSession = (session, leadMs = 2 * 60 * 1000) => {
+  if (session?.role !== "teacher" || !session.refreshToken) return false;
+  if (!session.tokenExpiresAt) return true;
+
+  const expiresAt = Date.parse(session.tokenExpiresAt);
+  if (!Number.isFinite(expiresAt)) return true;
+
+  return expiresAt - Date.now() <= leadMs;
+};
 
 const normalizeStudents = (response) => {
   const rows = Array.isArray(response) ? response : response?.students || [];
@@ -110,6 +138,7 @@ const summarizeRecords = (records = []) =>
 export default function App() {
   const [booting, setBooting] = useState(true);
   const [session, setSessionState] = useState(null);
+  const refreshInFlightRef = useRef(null);
 
   useEffect(() => {
     loadSession()
@@ -121,6 +150,110 @@ export default function App() {
     setSessionState(nextSession);
     await saveSession(nextSession);
   };
+
+  const refreshTeacherSession = useCallback(async (sessionToRefresh = session) => {
+    if (sessionToRefresh?.role !== "teacher" || !sessionToRefresh.refreshToken) {
+      return sessionToRefresh;
+    }
+
+    if (!refreshInFlightRef.current) {
+      refreshInFlightRef.current = (async () => {
+        const response = await refreshTeacherToken(sessionToRefresh.refreshToken);
+        const token = getAccessToken(response);
+        const refreshToken = getRefreshToken(response) || sessionToRefresh.refreshToken;
+
+        if (!token) {
+          throw new Error("Refresh response me token nahi mila.");
+        }
+
+        const nextSession = {
+          ...sessionToRefresh,
+          token,
+          refreshToken,
+          user: response.user || sessionToRefresh.user,
+          tokenExpiresAt: getTokenExpiresAt(response),
+          savedAt: new Date().toISOString(),
+        };
+
+        setSessionState((current) => {
+          if (!current || current.savedAt !== sessionToRefresh.savedAt) return current;
+          return nextSession;
+        });
+        await saveSession(nextSession);
+        return nextSession;
+      })().finally(() => {
+        refreshInFlightRef.current = null;
+      });
+    }
+
+    return refreshInFlightRef.current;
+  }, [session]);
+
+  useEffect(() => {
+    if (session?.role !== "teacher" || !session.refreshToken) return undefined;
+
+    return registerAuthRefreshHandler(async () => {
+      const refreshedSession = await refreshTeacherSession(session);
+      return refreshedSession?.token || "";
+    });
+  }, [refreshTeacherSession, session]);
+
+  useEffect(() => {
+    if (session?.role !== "teacher" || !session.refreshToken) return undefined;
+
+    let refreshTimer;
+    let cancelled = false;
+
+    const scheduleRefresh = (activeSession) => {
+      if (cancelled || activeSession?.role !== "teacher" || !activeSession.refreshToken) return;
+
+      const expiresAt = Date.parse(activeSession.tokenExpiresAt || "");
+      const fallbackMs = 25 * 60 * 1000;
+      const refreshInMs = Number.isFinite(expiresAt)
+        ? Math.max(expiresAt - Date.now() - 2 * 60 * 1000, 0)
+        : 0;
+
+      refreshTimer = setTimeout(async () => {
+        try {
+          const refreshed = await refreshTeacherSession(activeSession);
+          scheduleRefresh(refreshed);
+        } catch (error) {
+          console.warn("Teacher session refresh failed:", error.message);
+          scheduleRefresh({
+            ...activeSession,
+            tokenExpiresAt: new Date(Date.now() + fallbackMs).toISOString(),
+          });
+        }
+      }, Number.isFinite(expiresAt) ? refreshInMs : 0);
+    };
+
+    scheduleRefresh(session);
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [refreshTeacherSession, session]);
+
+  useEffect(() => {
+    if (session?.role !== "teacher" || !session.refreshToken) return undefined;
+
+    const refreshIfNeeded = () => {
+      if (shouldRefreshTeacherSession(session)) {
+        refreshTeacherSession(session).catch((error) => {
+          console.warn("Teacher session refresh failed:", error.message);
+        });
+      }
+    };
+
+    refreshIfNeeded();
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshIfNeeded();
+    });
+
+    return () => subscription.remove();
+  }, [refreshTeacherSession, session]);
 
   const handleLogout = async () => {
     setSessionState(null);
@@ -184,6 +317,7 @@ function LoginScreen({ onLogin }) {
         role: mode,
         token,
         refreshToken: getRefreshToken(response),
+        tokenExpiresAt: mode === "teacher" ? getTokenExpiresAt(response) : null,
         user: response.user,
         savedAt: new Date().toISOString(),
       });
@@ -196,10 +330,15 @@ function LoginScreen({ onLogin }) {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.loginShell}
     >
-      <ScrollView contentContainerStyle={styles.loginContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.loginContent}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.brandBlock}>
           <View style={styles.logoHalo}>
             <View style={styles.logoMark}>
@@ -250,8 +389,6 @@ function LoginScreen({ onLogin }) {
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Login</Text>}
           </Pressable>
         </View>
-
-        <Text style={styles.apiHint}>API: {API_BASE_URL}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -324,6 +461,7 @@ function TeacherArea({ activeTab, onTabChange, session }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -341,6 +479,7 @@ function TeacherArea({ activeTab, onTabChange, session }) {
       if (!silent) setLoading(true);
       setError("");
       setMessage("");
+      setSaved(false);
 
       try {
         const boot = await getAttendanceBootstrap(session.token);
@@ -401,6 +540,7 @@ function TeacherArea({ activeTab, onTabChange, session }) {
     }
 
     setSaving(true);
+    setSaved(false);
     setError("");
     setMessage("");
     try {
@@ -410,9 +550,11 @@ function TeacherArea({ activeTab, onTabChange, session }) {
         statuses,
       };
       const response = await saveAttendance(session.token, payload);
-      setMessage(response?.message || "Attendance saved successfully.");
       await load({ silent: true });
+      setMessage(response?.message || "Attendance saved successfully.");
+      setSaved(true);
     } catch (err) {
+      setSaved(false);
       setError(err.message || "Attendance save failed");
     } finally {
       setSaving(false);
@@ -421,6 +563,7 @@ function TeacherArea({ activeTab, onTabChange, session }) {
 
   const refresh = () => {
     setRefreshing(true);
+    setSaved(false);
     load({ silent: true });
   };
 
@@ -432,13 +575,17 @@ function TeacherArea({ activeTab, onTabChange, session }) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
     >
       {error ? <Notice tone="error" text={error} /> : null}
-      {message ? <Notice tone="info" text={message} /> : null}
+      {message ? <Notice tone={saved ? "success" : "info"} text={message} /> : null}
 
       {assignments.length ? (
         <AssignmentPicker
           assignments={assignments}
           selectedKey={assignmentKey(selectedAssignment)}
-          onSelect={setSelectedKey}
+          onSelect={(nextKey) => {
+            setSelectedKey(nextKey);
+            setSaved(false);
+            setMessage("");
+          }}
         />
       ) : null}
 
@@ -456,15 +603,22 @@ function TeacherArea({ activeTab, onTabChange, session }) {
       {activeTab === "attendance" ? (
         <AttendanceMarker
           date={date}
+          disabled={saved}
           isHoliday={selectedDateIsHoliday}
-          onDateChange={setDate}
+          onDateChange={(nextDate) => {
+            setDate(nextDate);
+            setSaved(false);
+            setMessage("");
+          }}
           saving={saving}
           statuses={statuses}
           students={students}
           onSave={saveClassAttendance}
-          onStatusChange={(studentId, status) =>
-            setStatuses((prev) => ({ ...prev, [studentId]: status }))
-          }
+          onStatusChange={(studentId, status) => {
+            setStatuses((prev) => ({ ...prev, [studentId]: status }));
+            setSaved(false);
+            setMessage("");
+          }}
         />
       ) : null}
 
@@ -666,6 +820,7 @@ function StudentList({ students }) {
 
 function AttendanceMarker({
   date,
+  disabled,
   isHoliday,
   onDateChange,
   onSave,
@@ -733,8 +888,21 @@ function AttendanceMarker({
         <EmptyState title="No students" text="Attendance mark karne ke liye students load nahi hue." />
       )}
 
-      <Pressable disabled={saving || !students.length || isHoliday} onPress={onSave} style={[styles.primaryButton, (saving || !students.length || isHoliday) && styles.disabledButton]}>
-        {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{isHoliday ? "Holiday - No Attendance" : "Save Attendance"}</Text>}
+      <Pressable
+        disabled={saving || disabled || !students.length || isHoliday}
+        onPress={onSave}
+        style={[
+          styles.primaryButton,
+          (saving || disabled || !students.length || isHoliday) && styles.disabledButton,
+        ]}
+      >
+        {saving ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.primaryButtonText}>
+            {isHoliday ? "Holiday - No Attendance" : disabled ? "Attendance Saved" : "Save Attendance"}
+          </Text>
+        )}
       </Pressable>
     </View>
   );
@@ -1381,8 +1549,10 @@ function SegmentButton({ active, label, onPress }) {
 }
 
 function Notice({ tone, text }) {
+  const toneStyle = tone === "error" ? styles.noticeError : tone === "success" ? styles.noticeSuccess : styles.noticeInfo;
+
   return (
-    <View style={[styles.notice, tone === "error" ? styles.noticeError : styles.noticeInfo]}>
+    <View style={[styles.notice, toneStyle]}>
       <Text style={styles.noticeText}>{text}</Text>
     </View>
   );
@@ -1495,6 +1665,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     padding: 20,
+    paddingBottom: 44,
   },
   brandBlock: {
     alignItems: "center",
@@ -1644,13 +1815,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "900",
-  },
-  apiHint: {
-    color: "#8a8f98",
-    fontSize: 11,
-    fontWeight: "700",
-    marginTop: 16,
-    textAlign: "center",
   },
   errorText: {
     color: "#b42318",
@@ -2256,6 +2420,11 @@ const styles = StyleSheet.create({
   },
   noticeInfo: {
     backgroundColor: "#d7f4f0",
+  },
+  noticeSuccess: {
+    backgroundColor: "#dcfce7",
+    borderColor: "#86efac",
+    borderWidth: 1,
   },
   noticeText: {
     color: "#17202a",

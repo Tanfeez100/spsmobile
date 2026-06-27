@@ -11,6 +11,18 @@ export const getDefaultApiBaseUrl = () => {
 
 export const API_BASE_URL = getDefaultApiBaseUrl();
 
+let authRefreshHandler = null;
+
+export const registerAuthRefreshHandler = (handler) => {
+  authRefreshHandler = typeof handler === "function" ? handler : null;
+
+  return () => {
+    if (authRefreshHandler === handler) {
+      authRefreshHandler = null;
+    }
+  };
+};
+
 export const buildQuery = (params = {}) => {
   const query = Object.entries(params)
     .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== "")
@@ -25,12 +37,20 @@ const getMessage = (data, fallback) => {
   return data?.message || data?.error || fallback;
 };
 
-const normalizeError = (error, fallback = "Request failed") => {
+const normalizeError = (error, fallback = "Request failed", options = {}) => {
   const raw = String(error?.message || fallback);
   const text = raw.toLowerCase();
 
   if (text.includes("network request failed") || text.includes("failed to fetch")) {
     return "Backend se connection nahi ho pa raha. API URL aur server status check karein.";
+  }
+
+  if (options.authErrorMessage && error?.status === 401) {
+    return options.authErrorMessage;
+  }
+
+  if (text.includes("invalid credentials") || text.includes("invalid username") || text.includes("invalid password")) {
+    return "Wrong email/username or password.";
   }
 
   if (text.includes("jwt") || text.includes("token") || error?.status === 401) {
@@ -51,6 +71,8 @@ export const request = async (path, options = {}) => {
     body,
     params,
     timeoutMs = 20000,
+    allowAuthRefresh = true,
+    authErrorMessage,
   } = options;
 
   const controller = new AbortController();
@@ -72,6 +94,18 @@ export const request = async (path, options = {}) => {
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
 
+    if (!response.ok && response.status === 401 && token && allowAuthRefresh && authRefreshHandler) {
+      const refreshedToken = await authRefreshHandler();
+
+      if (refreshedToken && refreshedToken !== token) {
+        return request(path, {
+          ...options,
+          token: refreshedToken,
+          allowAuthRefresh: false,
+        });
+      }
+    }
+
     if (!response.ok) {
       const message = getMessage(data, `Request failed with ${response.status}`);
       const error = new Error(message);
@@ -82,7 +116,7 @@ export const request = async (path, options = {}) => {
 
     return data;
   } catch (error) {
-    throw new Error(normalizeError(error));
+    throw new Error(normalizeError(error, "Request failed", { authErrorMessage }));
   } finally {
     clearTimeout(timer);
   }
@@ -92,12 +126,14 @@ export const loginTeacher = (email, password) =>
   request("/api/auth/login", {
     method: "POST",
     body: { email, password },
+    authErrorMessage: "Wrong email or password.",
   });
 
 export const loginStudent = (username, password) =>
   request("/api/student-auth/login", {
     method: "POST",
     body: { username, password },
+    authErrorMessage: "Wrong username or password.",
   });
 
 export const refreshTeacherToken = (refreshToken) =>
