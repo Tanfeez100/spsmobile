@@ -17,11 +17,15 @@ import {
   View,
 } from "react-native";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
+import * as Location from "expo-location";
 import {
   getAttendanceBootstrap,
   getAttendanceRecords,
   getHolidayCalendar,
   getMarks,
+  getTeacherAttendanceRecords,
+  getTeacherAttendanceToday,
+  getTeacherLeaves,
   getStudentAttendance,
   getStudents,
   getSubjectsForClass,
@@ -30,7 +34,11 @@ import {
   registerAuthRefreshHandler,
   refreshTeacherToken,
   saveAttendance,
+  submitCheckoutExplanation,
   submitMarks,
+  submitTeacherLeave,
+  teacherCheckIn,
+  teacherCheckOut,
 } from "./src/api/client";
 import { clearSession, loadSession, saveSession } from "./src/storage/session";
 import { formatDisplayDate, getDefaultAcademicYear, monthIso, todayIso } from "./src/utils/date";
@@ -46,19 +54,114 @@ const statusOptions = [
   { key: "late", label: "Late" },
 ];
 
-const teacherTabs = [
-  { key: "home", label: "Home" },
-  { key: "students", label: "Students" },
-  { key: "attendance", label: "Attendance" },
-  { key: "reports", label: "Reports" },
-  { key: "history", label: "History" },
-  { key: "holidays", label: "Holidays" },
-  { key: "submitMarks", label: "Submit Marks" },
-  { key: "viewMarks", label: "View Marks" },
+const statusLabels = {
+  present_provisional: "Present Provisional",
+  present: "Present",
+  late: "Late",
+  half_day: "Half Day",
+  absent: "Absent",
+  leave: "Leave",
+  holiday: "Holiday",
+  checkout_missing: "Checkout Missing",
+  rejected: "Rejected",
+  pending: "Pending",
+  approved: "Approved",
+};
+
+const getCurrentYear = () => String(new Date().getFullYear());
+const formatMonthLabel = (monthKey) => {
+  if (!monthKey) return "-";
+  const parsed = new Date(`${monthKey}-01T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return monthKey;
+  return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(parsed);
+};
+
+const summarizeTeacherHistory = (records = []) =>
+  records.reduce(
+    (summary, record) => {
+      const status = String(record?.status || "").toLowerCase();
+
+      summary.total_records += 1;
+      if (["present", "late", "half_day", "present_provisional"].includes(status)) summary.working_days += 1;
+      if (status === "present" || status === "present_provisional") summary.present += 1;
+      if (status === "late") summary.late += 1;
+      if (status === "half_day") summary.half_day += 1;
+      if (status === "absent") summary.absent += 1;
+      if (status === "leave") summary.leave += 1;
+      if (status === "checkout_missing") summary.checkout_missing += 1;
+
+      return summary;
+    },
+    {
+      total_records: 0,
+      working_days: 0,
+      present: 0,
+      late: 0,
+      half_day: 0,
+      absent: 0,
+      leave: 0,
+      checkout_missing: 0,
+    },
+  );
+
+const checkoutReasonOptions = [
+  { value: "Forgot Checkout", label: "Forgot check-out" },
+  { value: "GPS Problem", label: "Location issue" },
+  { value: "Network Issue", label: "Network issue" },
+  { value: "Emergency", label: "Emergency" },
+  { value: "Other", label: "Other" },
+];
+
+const leaveTypeOptions = [
+  "Casual Leave",
+  "Sick Leave",
+  "Emergency Leave",
+  "Duty Leave",
+];
+
+const teacherTabSections = [
+  {
+    key: "home",
+    title: "Home",
+    subtitle: "Overview",
+    tabs: [{ key: "home", label: "Home" }],
+  },
+  {
+    key: "attendance",
+    title: "Attendance",
+    subtitle: "Daily tracking",
+    tabs: [
+      { key: "gpsAttendance", label: "Check In/Out" },
+      { key: "attendance", label: "Add Attendance" },
+      { key: "students", label: "Students" },
+      { key: "holidays", label: "Holidays" },
+    ],
+  },
+  {
+    key: "marks",
+    title: "Marks",
+    subtitle: "Assessments",
+    tabs: [
+      { key: "submitMarks", label: "Submit Marks" },
+      { key: "viewMarks", label: "View Marks" },
+    ],
+  },
+  {
+    key: "reportsHistory",
+    title: "Reports",
+    subtitle: "Analytics",
+    tabs: [
+      { key: "gpsHistory", label: "Teacher's History" },
+      { key: "history", label: "History" },
+      { key: "reports", label: "Reports" },
+    ],
+  },
 ];
 
 const teacherFeatures = [
-  { key: "attendance", label: "Attendance", meta: "Mark class attendance" },
+  { key: "gpsAttendance", label: "Check In/Out", meta: "Mark arrival, departure and leave" },
+  { key: "gpsHistory", label: "Teacher's History", meta: "Monthly and yearly attendance history" },
+  { key: "attendance", label: "Add Attendance", meta: "Mark class attendance" },
   { key: "reports", label: "Reports", meta: "Monthly class report" },
   { key: "history", label: "Student History", meta: "Student attendance record" },
   { key: "holidays", label: "Holidays", meta: "School holiday calendar" },
@@ -68,12 +171,25 @@ const teacherFeatures = [
 
 const terminals = ["First", "Second", "Third", "Annual"];
 
-const studentTabs = [
-  { key: "home", label: "Home" },
-  { key: "attendance", label: "Attendance" },
+const studentTabSections = [
+  {
+    key: "home",
+    title: "Homes",
+    subtitle: "Overview",
+    tabs: [{ key: "home", label: "Home" }],
+  },
+  {
+    key: "attendance",
+    title: "Attendance",
+    subtitle: "Daily record",
+    tabs: [{ key: "attendance", label: "Attendance" }],
+  },
 ];
 
-const getAccessToken = (data) => data?.session?.access_token || data?.access_token || "";
+const getActiveTabSection = (sections, tabKey) =>
+  sections.find((section) => section.tabs.some((tab) => tab.key === tabKey)) || sections[0] || null;
+
+const getAccessToken = (data) => data?.access_token || data?.session?.access_token || "";
 const getRefreshToken = (data) => data?.session?.refresh_token || data?.refresh_token || "";
 const getTokenExpiresAt = (data) => {
   const tokenInfoExpiresAt = data?.token_info?.expires_at;
@@ -396,10 +512,11 @@ function LoginScreen({ onLogin }) {
 
 function Dashboard({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState("home");
-  const tabs = session.role === "teacher" ? teacherTabs : studentTabs;
+  const tabSections = session.role === "teacher" ? teacherTabSections : studentTabSections;
+  const activeSection = useMemo(() => getActiveTabSection(tabSections, activeTab), [activeTab, tabSections]);
 
   useEffect(() => {
-    setActiveTab("home");
+    setActiveTab(tabSections[0]?.tabs[0]?.key || "home");
   }, [session.role]);
 
   return (
@@ -425,32 +542,51 @@ function Dashboard({ session, onLogout }) {
       </View>
 
       {session.role === "teacher" ? (
-        <TeacherArea activeTab={activeTab} onTabChange={setActiveTab} session={session} />
+        <TeacherArea
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          sectionTabs={activeSection?.tabs || []}
+          session={session}
+        />
       ) : (
-        <StudentArea activeTab={activeTab} session={session} />
+        <StudentArea
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          sectionTabs={activeSection?.tabs || []}
+          session={session}
+        />
       )}
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabScroller}
-        contentContainerStyle={styles.tabBar}
-      >
-        {tabs.map((tab) => (
-          <Pressable
-            key={tab.key}
-            onPress={() => setActiveTab(tab.key)}
-            style={[styles.tabButton, activeTab === tab.key && styles.tabButtonActive]}
-          >
-            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={styles.tabDock}>
+        <View style={styles.parentTabScroller}>
+          <View style={styles.parentTabBar}>
+            {tabSections.map((section) => {
+              const isActive = activeSection?.key === section.key;
+              const firstTabKey = section.tabs[0]?.key || "home";
+
+              return (
+                <Pressable
+                  key={section.key}
+                  onPress={() => setActiveTab(firstTabKey)}
+                  style={[styles.parentTabButton, isActive && styles.parentTabButtonActive]}
+                >
+                  <View style={[styles.parentTabBadge, isActive && styles.parentTabBadgeActive]}>
+                    <Text style={[styles.parentTabBadgeText, isActive && styles.parentTabBadgeTextActive]}>
+                      {String(section.title || "").slice(0, 1).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={[styles.parentTabText, isActive && styles.parentTabTextActive]}>{section.title}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </View>
     </View>
   );
 }
 
-function TeacherArea({ activeTab, onTabChange, session }) {
+function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
   const [bootstrap, setBootstrap] = useState(null);
   const [selectedKey, setSelectedKey] = useState("");
   const [students, setStudents] = useState([]);
@@ -574,20 +710,9 @@ function TeacherArea({ activeTab, onTabChange, session }) {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
     >
+      <SectionTabsBar tabs={sectionTabs} activeTab={activeTab} onTabChange={onTabChange} />
       {error ? <Notice tone="error" text={error} /> : null}
       {message ? <Notice tone={saved ? "success" : "info"} text={message} /> : null}
-
-      {assignments.length ? (
-        <AssignmentPicker
-          assignments={assignments}
-          selectedKey={assignmentKey(selectedAssignment)}
-          onSelect={(nextKey) => {
-            setSelectedKey(nextKey);
-            setSaved(false);
-            setMessage("");
-          }}
-        />
-      ) : null}
 
       {activeTab === "home" ? (
         <TeacherHome
@@ -599,6 +724,14 @@ function TeacherArea({ activeTab, onTabChange, session }) {
       ) : null}
 
       {activeTab === "students" ? <StudentList students={students} /> : null}
+
+      {activeTab === "gpsAttendance" ? (
+        <TeacherGpsAttendancePanel session={session} />
+      ) : null}
+
+      {activeTab === "gpsHistory" ? (
+        <TeacherGpsHistoryPanel session={session} />
+      ) : null}
 
       {activeTab === "attendance" ? (
         <AttendanceMarker
@@ -653,7 +786,7 @@ function TeacherArea({ activeTab, onTabChange, session }) {
   );
 }
 
-function StudentArea({ activeTab, session }) {
+function StudentArea({ activeTab, onTabChange, sectionTabs, session }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -695,10 +828,36 @@ function StudentArea({ activeTab, session }) {
         />
       }
     >
+      <SectionTabsBar tabs={sectionTabs} activeTab={activeTab} onTabChange={onTabChange} />
       {error ? <Notice tone="error" text={error} /> : null}
       {activeTab === "home" ? <StudentHome student={student} summary={summary} /> : null}
       {activeTab === "attendance" ? <StudentAttendance records={records} summary={summary} /> : null}
     </ScrollView>
+  );
+}
+
+function SectionTabsBar({ tabs, activeTab, onTabChange }) {
+  if (!tabs?.length) return null;
+
+  return (
+    <View style={styles.sectionTabsWrap}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sectionTabsScroller} contentContainerStyle={styles.sectionTabsBar}>
+        {tabs.map((tab) => {
+          const active = activeTab === tab.key;
+
+          return (
+            <Pressable
+              key={tab.key}
+              onPress={() => onTabChange(tab.key)}
+              style={[styles.sectionTabButton, active && styles.sectionTabButtonActive]}
+            >
+              <View style={[styles.sectionTabIcon, active && styles.sectionTabIconActive]} />
+              <Text style={[styles.sectionTabText, active && styles.sectionTabTextActive]}>{tab.label}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -834,11 +993,10 @@ function AttendanceMarker({
       <View style={styles.inlineField}>
         <Text style={styles.inputLabel}>Date</Text>
         <TextInput
-          onChangeText={onDateChange}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor="#8a8f98"
-          style={styles.input}
-          value={date}
+          editable={false}
+          selectTextOnFocus={false}
+          style={[styles.input, styles.readOnlyInput]}
+          value={formatDisplayDate(date)}
         />
       </View>
 
@@ -908,10 +1066,467 @@ function AttendanceMarker({
   );
 }
 
+const requestLocationPermission = async () => {
+  const { status } = await Location.requestForegroundPermissionsAsync();
+  return status === "granted";
+};
+
+const getCurrentLocation = async () => {
+  const granted = await requestLocationPermission();
+  if (!granted) {
+    throw new Error("Location permission denied. Attendance mark nahi ho sakta.");
+  }
+
+  const servicesEnabled = await Location.hasServicesEnabledAsync();
+  if (!servicesEnabled) {
+    throw new Error("Location service off hai. Service on karke dobara try karein.");
+  }
+
+  const position = await Location.getCurrentPositionAsync({
+    accuracy: Location.Accuracy.Highest,
+  });
+
+  return {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+    accuracy: position.coords.accuracy,
+  };
+};
+
+function TeacherGpsAttendancePanel({ session }) {
+  const [detail, setDetail] = useState(null);
+  const [detailLoaded, setDetailLoaded] = useState(false);
+  const [leaves, setLeaves] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [checkoutForm, setCheckoutForm] = useState({ reason: "Forgot Checkout", remarks: "" });
+  const [leaveForm, setLeaveForm] = useState({
+    leave_type: "Casual Leave",
+    from_date: todayIso(),
+    to_date: todayIso(),
+    reason: "",
+  });
+  const [leaveTypeOpen, setLeaveTypeOpen] = useState(false);
+
+  const load = useCallback(async () => {
+    setError("");
+    setDetailLoaded(false);
+    setDetail(null);
+    try {
+      const [todayResponse, leavesResponse] = await Promise.all([
+        getTeacherAttendanceToday(session.token),
+        getTeacherLeaves(session.token),
+      ]);
+      setDetail(todayResponse);
+      setDetailLoaded(true);
+      if (todayResponse?.settings_error) {
+        setError(todayResponse.settings_error);
+      }
+      setLeaves(leavesResponse?.leaves || []);
+    } catch (err) {
+      setError(err.message || "Attendance load failed");
+    } finally {
+      setLoading(false);
+      setSaving(false);
+    }
+  }, [session.token]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const runGpsAction = async (action) => {
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const location = await getCurrentLocation();
+      const payload = {
+        date: todayIso(),
+        location,
+        device_id: `${Platform.OS}-${session.user?.id || "teacher"}`,
+      };
+      const response =
+        action === "checkIn"
+          ? await teacherCheckIn(session.token, payload)
+          : await teacherCheckOut(session.token, payload);
+      setMessage(response?.message || "Attendance saved.");
+      await load();
+    } catch (err) {
+      setError(err.message || "Attendance failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitPendingCheckout = async (request) => {
+    if (!request?.id) return;
+    if (checkoutForm.reason === "Other" && !checkoutForm.remarks.trim()) {
+      setError("Other reason ke liye remarks required hai.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await submitCheckoutExplanation(session.token, request.id, checkoutForm);
+      setMessage("Checkout explanation submitted.");
+      setCheckoutForm({ reason: "Forgot Checkout", remarks: "" });
+      await load();
+    } catch (err) {
+      setError(err.message || "Explanation submit failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitLeave = async () => {
+    if (!leaveForm.reason.trim()) {
+      setError("Leave reason required hai.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await submitTeacherLeave(session.token, leaveForm);
+      setMessage("Leave request submitted.");
+      setLeaveForm({ leave_type: "Casual Leave", from_date: todayIso(), to_date: todayIso(), reason: "" });
+      setLeaveTypeOpen(false);
+      await load();
+    } catch (err) {
+      setError(err.message || "Leave request failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <LoadingBlock label="Attendance loading..." />;
+
+  const attendance = detail?.attendance;
+  const pendingCheckout = detail?.pendingCheckout || [];
+  const lockedRequest = pendingCheckout[0];
+  const settings = detail?.settings;
+  const settingsMissing = detailLoaded && !error && !settings && !detail?.settings_error;
+
+  return (
+    <View>
+      {error ? <Notice tone="error" text={error} /> : null}
+      {message ? <Notice tone="success" text={message} /> : null}
+
+      {settingsMissing ? (
+        <Notice tone="error" text="School location settings configure nahi hai. Admin se setup karwayein." />
+      ) : null}
+
+      {lockedRequest ? (
+        <View style={styles.marksCard}>
+          <Text style={styles.sectionTitle}>Checkout Missing</Text>
+          <Text style={styles.rowMeta}>
+            {lockedRequest.attendance_date} | Check in {lockedRequest.check_in_at ? new Date(lockedRequest.check_in_at).toLocaleTimeString("en-IN") : "-"}
+          </Text>
+          <Text style={styles.inputLabel}>Reason</Text>
+          <View style={styles.statusRow}>
+            {checkoutReasonOptions.map((reason) => (
+              <Pressable
+                key={reason.value}
+                onPress={() => setCheckoutForm((prev) => ({ ...prev, reason: reason.value }))}
+                style={[styles.statusButton, checkoutForm.reason === reason.value && styles.statusButtonActive]}
+              >
+                <Text style={[styles.statusText, checkoutForm.reason === reason.value && styles.statusTextActive]}>{reason.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={styles.inputLabel}>Remarks</Text>
+          <TextInput
+            onChangeText={(value) => setCheckoutForm((prev) => ({ ...prev, remarks: value }))}
+            placeholder="Explanation"
+            placeholderTextColor="#8a8f98"
+            style={styles.input}
+            value={checkoutForm.remarks}
+          />
+          <Pressable disabled={saving} onPress={() => submitPendingCheckout(lockedRequest)} style={[styles.primaryButton, saving && styles.disabledButton]}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Submit Explanation</Text>}
+          </Pressable>
+        </View>
+      ) : null}
+
+      <View style={styles.heroPanel}>
+        <Text style={styles.panelEyebrow}>Daily Check In/Out</Text>
+        <Text style={styles.panelTitle}>{statusLabels[attendance?.status] || "Not checked in"}</Text>
+        <Text style={styles.panelMeta}>
+          Radius {settings?.radius_meters || "-"}m | Accuracy {settings?.gps_accuracy_meters || "-"}m | Deadline {String(settings?.checkout_deadline || "-").slice(0, 5)}
+        </Text>
+      </View>
+
+      <View style={styles.metricGrid}>
+        <MetricCard label="Check In" value={attendance?.check_in_at ? new Date(attendance.check_in_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "--"} tone="teal" />
+        <MetricCard label="Check Out" value={attendance?.check_out_at ? new Date(attendance.check_out_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "--"} tone="green" />
+        <MetricCard label="Work Min" value={attendance?.working_minutes || 0} tone="amber" />
+        <MetricCard label="Distance" value={attendance?.check_in_distance_meters ? `${Math.round(attendance.check_in_distance_meters)}m` : "--"} tone="red" />
+      </View>
+
+      <View style={styles.statusRow}>
+        <Pressable
+          disabled={saving || !settings || Boolean(attendance?.check_in_at) || Boolean(lockedRequest)}
+          onPress={() => runGpsAction("checkIn")}
+          style={[styles.statusButton, styles.statusButtonActive, (saving || !settings || Boolean(attendance?.check_in_at) || Boolean(lockedRequest)) && styles.disabledButton]}
+        >
+          <Text style={styles.statusTextActive}>Check In</Text>
+        </Pressable>
+        <Pressable
+          disabled={saving || !settings || !attendance?.check_in_at || Boolean(attendance?.check_out_at) || Boolean(lockedRequest)}
+          onPress={() => runGpsAction("checkOut")}
+          style={[styles.statusButton, styles.statusButtonActive, (saving || !settings || !attendance?.check_in_at || Boolean(attendance?.check_out_at) || Boolean(lockedRequest)) && styles.disabledButton]}
+        >
+          <Text style={styles.statusTextActive}>Check Out</Text>
+        </Pressable>
+      </View>
+
+      <View style={[styles.marksCard, styles.topGap]}>
+        <Text style={styles.sectionTitle}>Apply Leave</Text>
+        <Text style={styles.inputLabel}>Leave Type</Text>
+        <View style={styles.dropdownWrap}>
+          <Pressable
+            onPress={() => setLeaveTypeOpen((prev) => !prev)}
+            style={[styles.input, styles.dropdownButton, leaveTypeOpen && styles.dropdownButtonActive]}
+          >
+            <Text style={styles.dropdownButtonText}>{leaveForm.leave_type}</Text>
+            <Text style={styles.dropdownChevron}>{leaveTypeOpen ? "^" : "v"}</Text>
+          </Pressable>
+          {leaveTypeOpen ? (
+            <View style={styles.dropdownMenu}>
+              {leaveTypeOptions.map((option) => {
+                const active = leaveForm.leave_type === option;
+                return (
+                  <Pressable
+                    key={option}
+                    onPress={() => {
+                      setLeaveForm((prev) => ({ ...prev, leave_type: option }));
+                      setLeaveTypeOpen(false);
+                    }}
+                    style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                  >
+                    <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+        <Text style={styles.inputLabel}>From Date</Text>
+        <TextInput style={styles.input} value={leaveForm.from_date} onChangeText={(value) => setLeaveForm((prev) => ({ ...prev, from_date: value }))} placeholder="YYYY-MM-DD" placeholderTextColor="#8a8f98" />
+        <Text style={styles.inputLabel}>To Date</Text>
+        <TextInput style={styles.input} value={leaveForm.to_date} onChangeText={(value) => setLeaveForm((prev) => ({ ...prev, to_date: value }))} placeholder="YYYY-MM-DD" placeholderTextColor="#8a8f98" />
+        <Text style={styles.inputLabel}>Reason</Text>
+        <TextInput style={styles.input} value={leaveForm.reason} onChangeText={(value) => setLeaveForm((prev) => ({ ...prev, reason: value }))} placeholder="Reason" placeholderTextColor="#8a8f98" />
+        <Pressable disabled={saving} onPress={submitLeave} style={[styles.primaryButton, saving && styles.disabledButton]}>
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Submit Leave</Text>}
+        </Pressable>
+      </View>
+
+      <View style={[styles.list, styles.topGap]}>
+        <Text style={styles.sectionTitle}>Leave Status</Text>
+        {leaves.length ? leaves.slice(0, 5).map((leave) => (
+          <View key={leave.id} style={styles.recordRow}>
+            <View style={styles.rowBody}>
+              <Text style={styles.rowTitle}>{leave.leave_type}</Text>
+              <Text style={styles.rowMeta}>{leave.from_date} to {leave.to_date}</Text>
+            </View>
+            <StatusPill status={leave.status} />
+          </View>
+        )) : <EmptyState title="No leave" text="Abhi tak leave request nahi hai." />}
+      </View>
+    </View>
+  );
+}
+
+function TeacherGpsHistoryPanel({ session }) {
+  const [year, setYear] = useState(getCurrentYear());
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [monthOpen, setMonthOpen] = useState(false);
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async (selectedYear = year) => {
+    const normalizedYear = String(selectedYear || year || getCurrentYear()).replace(/\D/g, "").slice(0, 4);
+    if (normalizedYear.length !== 4) {
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      const response = await getTeacherAttendanceRecords(session.token, { year: normalizedYear });
+      setDetail(response);
+    } catch (err) {
+      setDetail(null);
+      setError(err.message || "History load failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [session.token, year]);
+
+  useEffect(() => {
+    load(year);
+  }, [load, year]);
+
+  const records = detail?.records || [];
+  const monthlySummary = detail?.monthlySummary || [];
+  const yearlySummary = detail?.yearlySummary || [];
+  const monthOptions = useMemo(() => {
+    const months = Array.from(
+      new Set(
+        records
+          .map((record) => String(record.attendance_date || "").slice(0, 7))
+          .filter((month) => month && month.length === 7),
+      ),
+    ).sort((a, b) => b.localeCompare(a));
+
+    return [{ key: "all", label: "All Months" }, ...months.map((month) => ({ key: month, label: formatMonthLabel(month) }))];
+  }, [records]);
+
+  useEffect(() => {
+    if (!monthOptions.length) {
+      setSelectedMonth("all");
+      return;
+    }
+
+    setSelectedMonth((current) => (monthOptions.some((option) => option.key === current) ? current : monthOptions[0].key));
+  }, [monthOptions]);
+
+  const filteredRecords = useMemo(() => {
+    if (selectedMonth === "all") return records;
+    return records.filter((record) => String(record.attendance_date || "").slice(0, 7) === selectedMonth);
+  }, [records, selectedMonth]);
+
+  const selectedMonthLabel =
+    monthOptions.find((option) => option.key === selectedMonth)?.label || "All Months";
+  const summary = selectedMonth === "all"
+    ? (detail?.summary || {})
+    : summarizeTeacherHistory(filteredRecords);
+
+  return (
+    <View>
+      <View style={styles.heroPanel}>
+        <Text style={styles.panelEyebrow}>Attendance History</Text>
+        <Text style={styles.panelTitle}>Your Monthly and Yearly Attendance History</Text>
+        <Text style={styles.panelMeta}>{selectedMonthLabel}</Text>
+      </View>
+
+      <View style={styles.inlineField}>
+        <Text style={styles.inputLabel}>Year</Text>
+        <TextInput
+          onChangeText={(value) => setYear(value.replace(/\D/g, "").slice(0, 4))}
+          placeholder="YYYY"
+          placeholderTextColor="#8a8f98"
+          style={styles.input}
+          value={year}
+        />
+      </View>
+
+      {records.length ? (
+        <View style={styles.inlineField}>
+          <Text style={styles.inputLabel}>Month</Text>
+          <View style={styles.dropdownWrap}>
+            <Pressable
+              onPress={() => setMonthOpen((prev) => !prev)}
+              style={[styles.input, styles.dropdownButton, monthOpen && styles.dropdownButtonActive]}
+            >
+              <Text style={styles.dropdownButtonText}>{selectedMonthLabel}</Text>
+              <Text style={styles.dropdownChevron}>{monthOpen ? "^" : "v"}</Text>
+            </Pressable>
+            {monthOpen ? (
+              <View style={styles.dropdownMenu}>
+                {monthOptions.map((option) => {
+                  const active = selectedMonth === option.key;
+                  return (
+                    <Pressable
+                      key={option.key}
+                      onPress={() => {
+                        setSelectedMonth(option.key);
+                        setMonthOpen(false);
+                      }}
+                      style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                    >
+                      <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      {error ? <Notice tone="error" text={error} /> : null}
+      {loading ? <LoadingBlock label="History loading..." /> : null}
+
+      {!loading ? (
+        <View>
+          <View style={styles.metricGrid}>
+            <MetricCard label="Working Days" value={summary.working_days || 0} tone="teal" />
+            <MetricCard label="Present" value={summary.present || 0} tone="green" />
+            <MetricCard label="Late" value={summary.late || 0} tone="amber" />
+            <MetricCard label="Half Day" value={summary.half_day || 0} tone="teal" />
+          </View>
+          <View style={styles.metricGrid}>
+            <MetricCard label="Absent" value={summary.absent || 0} tone="red" />
+            <MetricCard label="Leave" value={summary.leave || 0} tone="teal" />
+            <MetricCard label="Checkout Missing" value={summary.checkout_missing || 0} tone="red" />
+            <MetricCard label="Records" value={selectedMonth === "all" ? detail?.count || 0 : filteredRecords.length} tone="teal" />
+          </View>
+
+          <View style={[styles.list, styles.topGap]}>
+            <Text style={styles.sectionTitle}>Monthly Breakdown</Text>
+            {monthlySummary.length ? monthlySummary.map((row) => (
+              <Pressable
+                key={row.key}
+                onPress={() => setSelectedMonth(row.key)}
+                style={[styles.recordRow, selectedMonth === row.key && styles.recordRowActive]}
+              >
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowTitle}>{formatMonthLabel(row.key)}</Text>
+                  <Text style={styles.rowMeta}>
+                    Working {row.working_days || 0} | Present {row.present || 0} | Late {row.late || 0}
+                  </Text>
+                  <Text style={styles.rowSub}>
+                    Half {row.half_day || 0} | Absent {row.absent || 0} | Leave {row.leave || 0}
+                  </Text>
+                </View>
+                <Text style={styles.monthBreakdownValue}>{row.working_days || 0}</Text>
+              </Pressable>
+            )) : <EmptyState title="No history" text="Is year ke liye history records nahi mile." />}
+          </View>
+
+          <View style={[styles.list, styles.topGap]}>
+            <Text style={styles.sectionTitle}>Year Summary</Text>
+            {yearlySummary.length ? yearlySummary.map((row) => (
+              <View key={row.key} style={styles.recordRow}>
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowTitle}>Year {row.key}</Text>
+                  <Text style={styles.rowMeta}>
+                    Working {row.working_days || 0} | Present {row.present || 0} | Late {row.late || 0}
+                  </Text>
+                </View>
+                <Text style={styles.rowSub}>{row.total_records || 0} records</Text>
+              </View>
+            )) : <EmptyState title="No yearly summary" text="Year summary available nahi hai." />}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function SubmitMarksPanel({ assignment, session, students }) {
   const [terminal, setTerminal] = useState("First");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [rollNo, setRollNo] = useState("");
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [subjects, setSubjects] = useState([]);
   const [marks, setMarks] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1037,9 +1652,41 @@ function SubmitMarksPanel({ assignment, session, students }) {
   return (
     <View>
       <Text style={styles.sectionTitle}>Submit Marks</Text>
-      <TerminalSelector value={terminal} onChange={setTerminal} />
+      <View style={styles.inlineField}>
+        <Text style={styles.inputLabel}>Terminal</Text>
+        <View style={styles.dropdownWrap}>
+          <Pressable
+            onPress={() => {
+              setTerminalOpen((prev) => !prev);
+            }}
+            style={[styles.input, styles.dropdownButton, terminalOpen && styles.dropdownButtonActive]}
+          >
+            <Text style={styles.dropdownButtonText}>{terminal || "Select terminal"}</Text>
+            <Text style={styles.dropdownChevron}>{terminalOpen ? "^" : "v"}</Text>
+          </Pressable>
+          {terminalOpen ? (
+            <View style={styles.dropdownMenu}>
+              {terminals.map((item) => {
+                const active = terminal === item;
+                return (
+                  <Pressable
+                    key={item}
+                    onPress={() => {
+                      setTerminal(item);
+                      setTerminalOpen(false);
+                    }}
+                    style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                  >
+                    <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{item}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      </View>
 
-      <StudentPicker
+      <StudentDropdown
         selectedStudentId={selectedStudentId}
         students={students}
         onSelect={(student) => {
@@ -1122,6 +1769,9 @@ function SubmitMarksPanel({ assignment, session, students }) {
 
 function ViewMarksPanel({ assignment, session }) {
   const [terminal, setTerminal] = useState("First");
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const [expandedStudents, setExpandedStudents] = useState({});
   const [marksData, setMarksData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1154,51 +1804,138 @@ function ViewMarksPanel({ assignment, session }) {
   }
 
   const rows = marksData?.students || [];
-  const submittedCount = rows.reduce(
-    (count, student) => count + (student.marks || []).filter((mark) => mark.status === "SUBMITTED" || mark.status === "LOCKED").length,
-    0,
-  );
-  const pendingCount = rows.reduce(
-    (count, student) => count + (student.marks || []).filter((mark) => mark.status === "PENDING").length,
-    0,
-  );
+  const studentRows = rows.map((student) => {
+    const marks = student.marks || [];
+    const submitted = marks.filter((mark) => mark.status === "SUBMITTED" || mark.status === "LOCKED").length;
+    const pending = marks.filter((mark) => mark.status === "PENDING").length;
+    return {
+      ...student,
+      stats: {
+        submitted,
+        pending,
+        total: marks.length,
+      },
+      statusFilter: pending > 0 ? "pending" : "submitted",
+    };
+  });
+  const submittedCount = studentRows.reduce((count, student) => count + student.stats.submitted, 0);
+  const pendingCount = studentRows.reduce((count, student) => count + student.stats.pending, 0);
+  const submittedStudents = studentRows.filter((student) => student.statusFilter === "submitted").length;
+  const pendingStudents = studentRows.filter((student) => student.statusFilter === "pending").length;
+  const filteredRows =
+    filter === "all" ? studentRows : studentRows.filter((student) => student.statusFilter === filter);
+  const toggleStudentCard = (studentId) => {
+    setExpandedStudents((prev) => ({
+      ...prev,
+      [studentId]: !prev[studentId],
+    }));
+  };
 
   return (
     <View>
       <Text style={styles.sectionTitle}>View Marks</Text>
-      <TerminalSelector value={terminal} onChange={setTerminal} />
+      <View style={styles.viewMarksTopRow}>
+        <View style={[styles.dropdownWrap, styles.viewMarksTerminalWrap]}>
+          <Text style={styles.inputLabel}>Terminal</Text>
+          <Pressable
+            onPress={() => setTerminalOpen((prev) => !prev)}
+            style={[styles.input, styles.dropdownButton, terminalOpen && styles.dropdownButtonActive]}
+          >
+            <Text style={styles.dropdownButtonText}>{terminal || "Select terminal"}</Text>
+            <Text style={styles.dropdownChevron}>{terminalOpen ? "^" : "v"}</Text>
+          </Pressable>
+          {terminalOpen ? (
+            <View style={styles.dropdownMenu}>
+              {terminals.map((item) => {
+                const active = terminal === item;
+                return (
+                  <Pressable
+                    key={item}
+                    onPress={() => {
+                      setTerminal(item);
+                      setTerminalOpen(false);
+                    }}
+                    style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                  >
+                    <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{item}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+
+      </View>
+
+      <View style={styles.dashboardCard}>
+        <View style={styles.metricGrid}>
+          <MetricCard label="Students" value={rows.length} tone="teal" />
+          <MetricCard label="Submitted" value={submittedCount} tone="green" />
+          <MetricCard label="Pending" value={pendingCount} tone="amber" />
+          <MetricCard label="Visible" value={filteredRows.length} tone="red" />
+        </View>
+        <Text style={styles.dashboardHint}>Submitted ka matlab completed marks. Pending wale students me abhi kuch subjects baaki hain.</Text>
+        <View style={styles.dashboardFilterRow}>
+          {[
+            { key: "all", label: "All" },
+            { key: "submitted", label: "Submitted" },
+            { key: "pending", label: "Pending" },
+          ].map((item) => {
+            const active = filter === item.key;
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => setFilter(item.key)}
+                style={[styles.dashboardFilterButton, active && styles.dashboardFilterButtonActive]}
+              >
+                <Text style={[styles.dashboardFilterText, active && styles.dashboardFilterTextActive]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={styles.dashboardMetaRow}>
+          <Text style={styles.dashboardMetaText}>Submitted Students: {submittedStudents}</Text>
+          <Text style={styles.dashboardMetaText}>Pending Students: {pendingStudents}</Text>
+        </View>
+      </View>
       {error ? <Notice tone="error" text={error} /> : null}
       {loading ? <LoadingBlock label="Marks loading..." /> : null}
 
-      {!loading && rows.length ? (
+      {!loading && filteredRows.length ? (
         <View>
-          <View style={styles.metricGrid}>
-            <MetricCard label="Students" value={rows.length} tone="teal" />
-            <MetricCard label="Submitted" value={submittedCount} tone="green" />
-            <MetricCard label="Pending" value={pendingCount} tone="amber" />
-          </View>
-
           <View style={[styles.list, styles.topGap]}>
-            {rows.map((student) => (
+            {filteredRows.map((student) => (
               <View key={student.student_id} style={styles.marksStudentCard}>
-                <View style={styles.recordRowHeader}>
-                  <View>
-                    <Text style={styles.rowTitle}>{student.name}</Text>
-                    <Text style={styles.rowMeta}>Roll {student.roll_no} | Class {student.class} {student.section}</Text>
-                  </View>
-                  <Text style={styles.totalText}>Total {getStudentMarksTotal(student.marks)}</Text>
-                </View>
-                {(student.marks || []).map((mark) => (
-                  <View key={mark.subject_id} style={styles.markLine}>
+                <Pressable
+                  onPress={() => toggleStudentCard(student.student_id)}
+                  style={styles.marksStudentHeaderPressable}
+                >
+                  <View style={styles.recordRowHeader}>
                     <View style={styles.rowBody}>
-                      <Text style={styles.markSubject}>{mark.subject_name}</Text>
-                      <Text style={styles.rowMeta}>
-                        Ext {mark.external_marks ?? 0} | Int {mark.internal_marks ?? 0}
-                      </Text>
+                      <Text style={styles.rowTitle}>{student.name}</Text>
+                      <Text style={styles.rowMeta}>Roll {student.roll_no} | Class {student.class} {student.section}</Text>
                     </View>
-                    <StatusPill status={mark.status} />
+                    <View style={styles.marksCardStatusWrap}>
+                      <Text style={styles.totalText}>Total {getStudentMarksTotal(student.marks)}</Text>
+                      <StatusPill status={student.stats.pending > 0 ? "PENDING" : "SUBMITTED"} />
+                    </View>
                   </View>
-                ))}
+                </Pressable>
+                {expandedStudents[student.student_id] ? (
+                  <View style={styles.marksStudentDetails}>
+                    {(student.marks || []).map((mark) => (
+                      <View key={mark.subject_id} style={styles.markLine}>
+                        <View style={styles.rowBody}>
+                          <Text style={styles.markSubject}>{mark.subject_name}</Text>
+                          <Text style={styles.rowMeta}>
+                            Ext {mark.external_marks ?? 0} | Int {mark.internal_marks ?? 0}
+                          </Text>
+                        </View>
+                        <StatusPill status={mark.status} />
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ))}
           </View>
@@ -1207,6 +1944,9 @@ function ViewMarksPanel({ assignment, session }) {
 
       {!loading && !rows.length ? (
         <EmptyState title="No marks found" text="Selected terminal ke liye marks records nahi mile." />
+      ) : null}
+      {!loading && rows.length && !filteredRows.length ? (
+        <EmptyState title="No filtered marks" text="Is filter me koi student nahi mila. Dusra filter try karo." />
       ) : null}
     </View>
   );
@@ -1279,6 +2019,8 @@ function ReportsPanel({ assignment, session, students }) {
 
 function StudentHistoryPanel({ session, students }) {
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [monthOpen, setMonthOpen] = useState(false);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1311,19 +2053,109 @@ function StudentHistoryPanel({ session, students }) {
     loadDetail();
   }, [selectedStudentId, session.token]);
 
-  const summary = detail?.summary || summarizeRecords(detail?.records || []);
+  const records = detail?.records || [];
+  const monthOptions = useMemo(() => {
+    const months = Array.from(
+      new Set(
+        records
+          .map((record) => String(record.attendance_date || "").slice(0, 7))
+          .filter((month) => month && month.length === 7),
+      ),
+    ).sort((a, b) => b.localeCompare(a));
+
+    return [{ key: "all", label: "All Months" }, ...months.map((month) => ({ key: month, label: formatMonthLabel(month) }))];
+  }, [records]);
+
+  useEffect(() => {
+    if (!monthOptions.length) {
+      setSelectedMonth("all");
+      return;
+    }
+
+    setSelectedMonth((current) => (monthOptions.some((option) => option.key === current) ? current : monthOptions[0].key));
+  }, [monthOptions]);
+
+  const filteredRecords = useMemo(() => {
+    if (selectedMonth === "all") return records;
+    return records.filter((record) => String(record.attendance_date || "").slice(0, 7) === selectedMonth);
+  }, [records, selectedMonth]);
+
+  const monthlySummary = useMemo(() => {
+    const map = new Map();
+    records.forEach((record) => {
+      const month = String(record.attendance_date || "").slice(0, 7);
+      if (!month || month.length !== 7) return;
+      if (!map.has(month)) {
+        map.set(month, []);
+      }
+      map.get(month).push(record);
+    });
+
+    return Array.from(map.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([month, monthRecords]) => {
+        const monthSummary = summarizeRecords(monthRecords);
+        const workingDays = monthSummary.present + monthSummary.absent + monthSummary.late;
+        const percentage = workingDays ? Math.round(((monthSummary.present + monthSummary.late) / workingDays) * 100) : 0;
+
+        return {
+          key: month,
+          label: formatMonthLabel(month),
+          count: monthRecords.length,
+          summary: monthSummary,
+          percentage,
+        };
+      });
+  }, [records]);
+
+  const summary = summarizeRecords(filteredRecords);
   const workingDays = Number(summary?.workingDays || summary.present + summary.absent + summary.late || 0);
   const percentage = Number(summary?.percentage || (workingDays ? Math.round((summary.present / workingDays) * 100) : 0));
+  const selectedMonthLabel =
+    monthOptions.find((option) => option.key === selectedMonth)?.label || "All Months";
 
   return (
     <View>
       <Text style={styles.sectionTitle}>Student History</Text>
       {students.length ? (
-        <StudentPicker
+        <StudentDropdown
           selectedStudentId={selectedStudentId}
           students={students}
           onSelect={(student) => setSelectedStudentId(student.id)}
         />
+      ) : null}
+      {records.length ? (
+        <View style={styles.inlineField}>
+          <Text style={styles.inputLabel}>Month</Text>
+          <View style={styles.dropdownWrap}>
+            <Pressable
+              onPress={() => setMonthOpen((prev) => !prev)}
+              style={[styles.input, styles.dropdownButton, monthOpen && styles.dropdownButtonActive]}
+            >
+              <Text style={styles.dropdownButtonText}>{selectedMonthLabel}</Text>
+              <Text style={styles.dropdownChevron}>{monthOpen ? "^" : "v"}</Text>
+            </Pressable>
+            {monthOpen ? (
+              <View style={styles.dropdownMenu}>
+                {monthOptions.map((option) => {
+                  const active = selectedMonth === option.key;
+                  return (
+                    <Pressable
+                      key={option.key}
+                      onPress={() => {
+                        setSelectedMonth(option.key);
+                        setMonthOpen(false);
+                      }}
+                      style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                    >
+                      <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+        </View>
       ) : null}
       {error ? <Notice tone="error" text={error} /> : null}
       {loading ? <LoadingBlock label="Student history loading..." /> : null}
@@ -1335,8 +2167,34 @@ function StudentHistoryPanel({ session, students }) {
             <MetricCard label="Late" value={summary.late || 0} tone="amber" />
             <MetricCard label="Attendance" value={`${percentage}%`} tone="teal" />
           </View>
+          {monthlySummary.length ? (
+            <View style={[styles.dashboardCard, styles.topGap]}>
+              <Text style={styles.sectionTitle}>Month Wise</Text>
+              <View style={styles.monthBreakdownList}>
+                {monthlySummary.map((row) => {
+                  const active = selectedMonth === row.key;
+                  return (
+                    <Pressable
+                      key={row.key}
+                      onPress={() => setSelectedMonth(row.key)}
+                      style={[styles.monthBreakdownItem, active && styles.monthBreakdownItemActive]}
+                    >
+                      <View style={styles.rowBody}>
+                        <Text style={styles.monthBreakdownTitle}>{row.label}</Text>
+                        <Text style={styles.monthBreakdownMeta}>
+                          Records {row.count} | Present {row.summary.present || 0} | Absent {row.summary.absent || 0} | Late {row.summary.late || 0}
+                        </Text>
+                      </View>
+                      <Text style={styles.monthBreakdownValue}>{row.percentage}%</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
           <View style={styles.topGap}>
-            <RecordList records={detail.records || []} />
+            <Text style={styles.sectionTitle}>{selectedMonth === "all" ? "All Records" : `${selectedMonthLabel} Records`}</Text>
+            <RecordList records={filteredRecords} />
           </View>
         </View>
       ) : null}
@@ -1376,14 +2234,13 @@ function HolidayCalendarPanel({ session }) {
       <View style={styles.inlineField}>
         <Text style={styles.inputLabel}>Month</Text>
         <TextInput
-          onChangeText={setMonth}
-          placeholder="YYYY-MM"
-          placeholderTextColor="#8a8f98"
-          style={styles.input}
-          value={month}
+          editable={false}
+          selectTextOnFocus={false}
+          style={[styles.input, styles.readOnlyInput]}
+          value={formatMonthLabel(month)}
         />
       </View>
-      <Notice tone="info" text="Friday holidays automatic hain. Teacher account se holidays view-only hain." />
+      <Notice tone="info" text="Holidays are managed by the school admin. Fridays are automatically marked as weekly off." />
       {error ? <Notice tone="error" text={error} /> : null}
       {loading ? <LoadingBlock label="Holidays loading..." /> : null}
       {!loading && holidays.length ? (
@@ -1451,22 +2308,6 @@ function RecordList({ records, studentMap }) {
   );
 }
 
-function TerminalSelector({ value, onChange }) {
-  return (
-    <View style={styles.terminalRow}>
-      {terminals.map((terminal) => (
-        <Pressable
-          key={terminal}
-          onPress={() => onChange(terminal)}
-          style={[styles.terminalButton, value === terminal && styles.terminalButtonActive]}
-        >
-          <Text style={[styles.terminalText, value === terminal && styles.terminalTextActive]}>{terminal}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 function StudentPicker({ selectedStudentId, students, onSelect }) {
   if (!students.length) {
     return <EmptyState title="No students" text="Marks submit karne ke liye students load nahi hue." />;
@@ -1498,27 +2339,63 @@ function StudentPicker({ selectedStudentId, students, onSelect }) {
   );
 }
 
-function AssignmentPicker({ assignments, selectedKey, onSelect }) {
+function StudentDropdown({ selectedStudentId, students, onSelect }) {
+  const [open, setOpen] = useState(false);
+
+  if (!students.length) {
+    return <EmptyState title="No students" text="Marks submit karne ke liye students load nahi hue." />;
+  }
+
+  const selectedStudent = students.find((student) => student.id === selectedStudentId) || students[0];
+  const selectedClassText = selectedStudent?.class
+    ? `Class ${selectedStudent.class}${selectedStudent.section ? `-${selectedStudent.section}` : ""}`
+    : "Class -";
+
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.assignmentScroller}>
-      {assignments.map((assignment) => {
-        const key = assignmentKey(assignment);
-        return (
-          <Pressable
-            key={key}
-            onPress={() => onSelect(key)}
-            style={[styles.assignmentChip, selectedKey === key && styles.assignmentChipActive]}
-          >
-            <Text style={[styles.assignmentText, selectedKey === key && styles.assignmentTextActive]}>
-              {assignment.class} {assignment.section}
+    <View style={styles.inlineField}>
+      <Text style={styles.inputLabel}>Student</Text>
+      <View style={styles.studentAccordionCard}>
+        <Pressable onPress={() => setOpen((prev) => !prev)} style={[styles.studentAccordionHeader, open && styles.studentAccordionHeaderActive]}>
+          <View style={styles.studentAccordionBody}>
+            <Text style={styles.studentAccordionTitle}>{selectedStudent?.name || "Select student"}</Text>
+            <Text style={styles.studentAccordionSubtext}>
+              Roll {selectedStudent?.rollNo || "-"} | {selectedClassText}
             </Text>
-            <Text style={[styles.assignmentYear, selectedKey === key && styles.assignmentTextActive]}>
-              {assignment.academic_year}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </ScrollView>
+          </View>
+          <View style={styles.studentAccordionBadge}>
+            <Text style={styles.studentAccordionBadgeText}>{open ? "Close" : "Open"}</Text>
+            <Text style={styles.dropdownChevron}>{open ? "^" : "v"}</Text>
+          </View>
+        </Pressable>
+        {open ? (
+          <View style={[styles.dropdownMenu, styles.dropdownMenuScrollable, styles.studentAccordionMenu]}>
+            <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
+              {students.map((student) => {
+                const active = selectedStudentId === student.id;
+                return (
+                  <Pressable
+                    key={student.id}
+                    onPress={() => {
+                      onSelect(student);
+                      setOpen(false);
+                    }}
+                    style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                  >
+                    <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>
+                      {student.name || "Student"}
+                    </Text>
+                    <Text style={[styles.dropdownItemMeta, active && styles.dropdownItemMetaActive]}>
+                      Roll {student.rollNo || "-"}
+                      {student.class ? ` | Class ${student.class}${student.section ? `-${student.section}` : ""}` : ""}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -1625,12 +2502,12 @@ const getInitials = (name = "") =>
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#f6f1e7",
+    backgroundColor: "#f5f7fb",
     paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0,
   },
   centerScreen: {
     alignItems: "center",
-    backgroundColor: "#f6f1e7",
+    backgroundColor: "#f5f7fb",
     flex: 1,
     justifyContent: "center",
   },
@@ -1659,7 +2536,7 @@ const styles = StyleSheet.create({
   },
   loginShell: {
     flex: 1,
-    backgroundColor: "#f6f1e7",
+    backgroundColor: "#f5f7fb",
   },
   loginContent: {
     flexGrow: 1,
@@ -1703,7 +2580,7 @@ const styles = StyleSheet.create({
     width: 96,
   },
   brandKicker: {
-    color: "#0f5f63",
+    color: "#1d4ed8",
     fontSize: 12,
     fontWeight: "900",
     marginBottom: 6,
@@ -1759,7 +2636,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   segmentButtonActive: {
-    backgroundColor: "#fffaf0",
+    backgroundColor: "#eff6ff",
   },
   segmentText: {
     color: "#52606d",
@@ -1767,15 +2644,15 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   segmentTextActive: {
-    color: "#0f5f63",
+    color: "#1d4ed8",
   },
   formBlock: {
     backgroundColor: "#fff",
-    borderColor: "#e0d4bd",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
     borderWidth: 1,
     padding: 16,
-    shadowColor: "#152238",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -1799,6 +2676,233 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minHeight: 48,
     paddingHorizontal: 13,
+  },
+  readOnlyInput: {
+    backgroundColor: "#f3f4f6",
+    color: "#475569",
+  },
+  dropdownWrap: {
+    position: "relative",
+    zIndex: 10,
+  },
+  dropdownButton: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingRight: 12,
+  },
+  dropdownButtonActive: {
+    borderColor: "#1d4ed8",
+  },
+  dropdownButtonText: {
+    color: "#17202a",
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    paddingRight: 10,
+  },
+  dropdownChevron: {
+    color: "#667085",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  dropdownMenu: {
+    backgroundColor: "#fff",
+    borderColor: "#d4d9df",
+    borderRadius: 10,
+    borderWidth: 1,
+    elevation: 6,
+    marginTop: 6,
+    overflow: "hidden",
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+  },
+  dropdownItem: {
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+  dropdownItemActive: {
+    backgroundColor: "#eef4ff",
+  },
+  dropdownItemText: {
+    color: "#17202a",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  dropdownItemTextActive: {
+    color: "#1d4ed8",
+  },
+  dropdownItemMeta: {
+    color: "#667085",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  dropdownItemMetaActive: {
+    color: "#5b6bff",
+  },
+  dropdownMenuScrollable: {
+    maxHeight: 240,
+  },
+  studentAccordionCard: {
+    backgroundColor: "#fff",
+    borderColor: "#dbe4f0",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 2,
+    overflow: "hidden",
+  },
+  studentAccordionHeader: {
+    alignItems: "center",
+    backgroundColor: "#fbfcfe",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 56,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  studentAccordionHeaderActive: {
+    backgroundColor: "#f3f7ff",
+    borderBottomColor: "#dbe4f0",
+    borderBottomWidth: 1,
+  },
+  studentAccordionBody: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 10,
+  },
+  studentAccordionTitle: {
+    color: "#17202a",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  studentAccordionSubtext: {
+    color: "#667085",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  studentAccordionBadge: {
+    alignItems: "flex-end",
+    minWidth: 48,
+  },
+  studentAccordionBadgeText: {
+    color: "#1d4ed8",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  studentAccordionMenu: {
+    borderColor: "#e2e8f0",
+    borderRadius: 0,
+    borderWidth: 0,
+    marginTop: 0,
+  },
+  viewMarksTopRow: {
+    alignItems: "flex-end",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  viewMarksTerminalWrap: {
+    flex: 1,
+    minWidth: 0,
+    zIndex: 20,
+  },
+  dashboardCard: {
+    backgroundColor: "#f7f9fc",
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 10,
+    padding: 14,
+  },
+  dashboardHint: {
+    color: "#667085",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 10,
+  },
+  monthBreakdownList: {
+    gap: 8,
+    marginTop: 10,
+  },
+  monthBreakdownItem: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#dbe4f0",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  monthBreakdownItemActive: {
+    backgroundColor: "#eef4ff",
+    borderColor: "#1d4ed8",
+  },
+  monthBreakdownTitle: {
+    color: "#17202a",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  monthBreakdownMeta: {
+    color: "#667085",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 3,
+  },
+  monthBreakdownValue: {
+    color: "#1d4ed8",
+    fontSize: 14,
+    fontWeight: "900",
+    minWidth: 42,
+    textAlign: "right",
+  },
+  dashboardFilterRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  dashboardFilterButton: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#dbe4f0",
+    borderRadius: 999,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 38,
+    paddingHorizontal: 10,
+  },
+  dashboardFilterButtonActive: {
+    backgroundColor: "#eef4ff",
+    borderColor: "#1d4ed8",
+  },
+  dashboardFilterText: {
+    color: "#52606d",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  dashboardFilterTextActive: {
+    color: "#1d4ed8",
+  },
+  dashboardMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 10,
+  },
+  dashboardMetaText: {
+    color: "#344054",
+    fontSize: 12,
+    fontWeight: "800",
   },
   primaryButton: {
     alignItems: "center",
@@ -1896,40 +3000,131 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 98,
+    paddingBottom: 180,
   },
-  tabScroller: {
-    backgroundColor: "#fff",
-    borderTopColor: "#dfcfac",
-    borderTopWidth: 1,
-    bottom: 0,
-    left: 0,
+  tabDock: {
+    backgroundColor: "rgba(250, 248, 244, 0.98)",
+    borderColor: "#e3ddd2",
+    borderRadius: 22,
+    borderWidth: 1,
+    bottom: 12,
+    left: 12,
+    paddingBottom: 8,
+    paddingTop: 8,
     position: "absolute",
-    right: 0,
+    right: 12,
+    shadowColor: "#111827",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 6,
   },
-  tabBar: {
+  parentTabScroller: {
+    paddingHorizontal: 8,
+  },
+  parentTabBar: {
     flexDirection: "row",
-    gap: 6,
-    padding: 10,
+    gap: 7,
   },
-  tabButton: {
+  parentTabButton: {
     alignItems: "center",
-    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderColor: "#e5e7eb",
+    borderRadius: 18,
+    borderWidth: 1,
     justifyContent: "center",
-    minWidth: 86,
-    minHeight: 44,
-    paddingHorizontal: 10,
+    flex: 1,
+    flexBasis: 0,
+    minHeight: 70,
+    minWidth: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 10,
   },
-  tabButtonActive: {
-    backgroundColor: "#0f5f63",
+  parentTabButtonActive: {
+    backgroundColor: "#f8fbff",
+    borderColor: "#3b82f6",
+    shadowColor: "#3b82f6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  tabText: {
-    color: "#667085",
+  parentTabText: {
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  parentTabTextActive: {
+    color: "#1d4ed8",
+  },
+  parentTabBadge: {
+    alignItems: "center",
+    backgroundColor: "#f1f5f9",
+    borderColor: "#e2e8f0",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 26,
+    justifyContent: "center",
+    marginBottom: 6,
+    width: 26,
+  },
+  parentTabBadgeActive: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#bfdbfe",
+  },
+  parentTabBadgeText: {
+    color: "#64748b",
     fontSize: 11,
     fontWeight: "900",
   },
-  tabTextActive: {
-    color: "#fff",
+  parentTabBadgeTextActive: {
+    color: "#1d4ed8",
+  },
+  sectionTabsWrap: {
+    borderBottomColor: "#e5e7eb",
+    borderBottomWidth: 1,
+    marginBottom: 12,
+    paddingBottom: 10,
+  },
+  sectionTabsScroller: {
+    marginHorizontal: -4,
+  },
+  sectionTabsBar: {
+    flexDirection: "row",
+    gap: 14,
+    paddingHorizontal: 4,
+  },
+  sectionTabButton: {
+    alignItems: "center",
+    borderBottomColor: "transparent",
+    borderBottomWidth: 2,
+    flexDirection: "row",
+    gap: 10,
+    paddingBottom: 10,
+    paddingHorizontal: 6,
+    paddingTop: 6,
+  },
+  sectionTabButtonActive: {
+    borderBottomColor: "#4f46e5",
+  },
+  sectionTabIcon: {
+    borderColor: "#8a8f98",
+    borderRadius: 2,
+    borderWidth: 1.4,
+    height: 12,
+    width: 12,
+  },
+  sectionTabIconActive: {
+    borderColor: "#4f46e5",
+  },
+  sectionTabText: {
+    color: "#8a8f98",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  sectionTabTextActive: {
+    color: "#4f46e5",
   },
   loadingBlock: {
     alignItems: "center",
@@ -1937,21 +3132,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   loadingText: {
-    color: "#6b7280",
+    color: "#475569",
     fontSize: 13,
     fontWeight: "800",
     marginTop: 10,
   },
   heroPanel: {
-    backgroundColor: "#152238",
-    borderRadius: 8,
+    backgroundColor: "#0f172a",
+    borderRadius: 18,
     marginBottom: 14,
     padding: 18,
-    shadowColor: "#152238",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 14,
-    elevation: 4,
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    elevation: 5,
   },
   heroBrandRow: {
     alignItems: "center",
@@ -1960,8 +3155,8 @@ const styles = StyleSheet.create({
   },
   heroLogoWrap: {
     alignItems: "center",
-    backgroundColor: "#fff8e8",
-    borderRadius: 8,
+    backgroundColor: "#dbeafe",
+    borderRadius: 14,
     height: 48,
     justifyContent: "center",
     width: 48,
@@ -1971,13 +3166,13 @@ const styles = StyleSheet.create({
     width: 42,
   },
   panelEyebrow: {
-    color: "#f6cf73",
+    color: "#fbbf24",
     fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   panelSubEyebrow: {
-    color: "#cfe8e8",
+    color: "#cbd5e1",
     fontSize: 12,
     fontWeight: "800",
     marginTop: 2,
@@ -1989,7 +3184,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   panelMeta: {
-    color: "#d6dde5",
+    color: "#cbd5e1",
     fontSize: 13,
     fontWeight: "800",
     marginTop: 4,
@@ -2006,7 +3201,7 @@ const styles = StyleSheet.create({
     width: "48%",
   },
   metric_teal: {
-    backgroundColor: "#d7f4f0",
+    backgroundColor: "#e0f2fe",
   },
   metric_green: {
     backgroundColor: "#dcfce7",
@@ -2018,13 +3213,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#fef3c7",
   },
   metricLabel: {
-    color: "#52606d",
+    color: "#334155",
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   metricValue: {
-    color: "#17202a",
+    color: "#0f172a",
     fontSize: 25,
     fontWeight: "900",
     marginTop: 8,
@@ -2038,8 +3233,8 @@ const styles = StyleSheet.create({
   featureCard: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#e4ded2",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
@@ -2048,14 +3243,14 @@ const styles = StyleSheet.create({
   },
   featureIcon: {
     alignItems: "center",
-    backgroundColor: "#e7edf0",
-    borderRadius: 8,
+    backgroundColor: "#dbeafe",
+    borderRadius: 14,
     height: 42,
     justifyContent: "center",
     width: 42,
   },
   featureIconText: {
-    color: "#126a6f",
+    color: "#1d4ed8",
     fontSize: 16,
     fontWeight: "900",
   },
@@ -2070,37 +3265,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 3,
   },
-  assignmentScroller: {
-    marginBottom: 14,
-  },
-  assignmentChip: {
-    backgroundColor: "#fff",
-    borderColor: "#d4d9df",
-    borderRadius: 8,
-    borderWidth: 1,
-    marginRight: 8,
-    minWidth: 96,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  assignmentChipActive: {
-    backgroundColor: "#126a6f",
-    borderColor: "#126a6f",
-  },
-  assignmentText: {
-    color: "#17202a",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  assignmentYear: {
-    color: "#667085",
-    fontSize: 11,
-    fontWeight: "800",
-    marginTop: 2,
-  },
-  assignmentTextActive: {
-    color: "#fff",
-  },
   list: {
     gap: 10,
   },
@@ -2110,8 +3274,8 @@ const styles = StyleSheet.create({
   rowCard: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#e4ded2",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
@@ -2119,8 +3283,8 @@ const styles = StyleSheet.create({
   },
   avatar: {
     alignItems: "center",
-    backgroundColor: "#334155",
-    borderRadius: 8,
+    backgroundColor: "#1e293b",
+    borderRadius: 14,
     height: 42,
     justifyContent: "center",
     width: 42,
@@ -2177,8 +3341,8 @@ const styles = StyleSheet.create({
   holidayCard: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#e4ded2",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
@@ -2225,8 +3389,8 @@ const styles = StyleSheet.create({
   terminalButton: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#d4d9df",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 14,
     borderWidth: 1,
     minHeight: 42,
     minWidth: 78,
@@ -2234,8 +3398,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   terminalButtonActive: {
-    backgroundColor: "#126a6f",
-    borderColor: "#126a6f",
+    backgroundColor: "#1d4ed8",
+    borderColor: "#1d4ed8",
   },
   terminalText: {
     color: "#52606d",
@@ -2247,8 +3411,8 @@ const styles = StyleSheet.create({
   },
   studentChip: {
     backgroundColor: "#fff",
-    borderColor: "#d4d9df",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 14,
     borderWidth: 1,
     marginRight: 8,
     minWidth: 136,
@@ -2256,8 +3420,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   studentChipActive: {
-    backgroundColor: "#17202a",
-    borderColor: "#17202a",
+    backgroundColor: "#0f172a",
+    borderColor: "#0f172a",
   },
   studentChipTitle: {
     color: "#17202a",
@@ -2275,8 +3439,8 @@ const styles = StyleSheet.create({
   },
   attendanceCard: {
     backgroundColor: "#fff",
-    borderColor: "#e4ded2",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12,
@@ -2286,8 +3450,8 @@ const styles = StyleSheet.create({
   },
   marksCard: {
     backgroundColor: "#fff",
-    borderColor: "#e4ded2",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
     borderWidth: 1,
     marginBottom: 10,
     padding: 12,
@@ -2316,6 +3480,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 12,
   },
+  marksStudentHeaderPressable: {
+    borderRadius: 8,
+  },
   recordRowHeader: {
     alignItems: "flex-start",
     borderBottomColor: "#edf0f3",
@@ -2331,6 +3498,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     textAlign: "right",
+  },
+  marksCardStatusWrap: {
+    alignItems: "flex-end",
+    gap: 6,
+  },
+  marksStudentDetails: {
+    paddingTop: 6,
   },
   markLine: {
     alignItems: "center",
@@ -2359,7 +3533,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   statusButtonActive: {
-    backgroundColor: "#126a6f",
+    backgroundColor: "#1d4ed8",
   },
   statusText: {
     color: "#52606d",
@@ -2372,12 +3546,16 @@ const styles = StyleSheet.create({
   recordRow: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#e4ded2",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 14,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 12,
+  },
+  recordRowActive: {
+    backgroundColor: "#eef4ff",
+    borderColor: "#1d4ed8",
   },
   statusPill: {
     borderRadius: 8,
@@ -2419,7 +3597,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fee2e2",
   },
   noticeInfo: {
-    backgroundColor: "#d7f4f0",
+    backgroundColor: "#dbeafe",
   },
   noticeSuccess: {
     backgroundColor: "#dcfce7",
@@ -2434,8 +3612,8 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#e4ded2",
-    borderRadius: 8,
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
     borderWidth: 1,
     padding: 22,
   },

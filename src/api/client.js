@@ -1,12 +1,18 @@
 const trimTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
 
+const LOCAL_API_BASE_URL = "http://starpublicschool.onrender.com";
 const HOSTED_API_BASE_URL = "https://starpublicschool.onrender.com";
 
 export const getDefaultApiBaseUrl = () => {
   const envUrl = trimTrailingSlash(process.env.EXPO_PUBLIC_API_BASE_URL);
-  if (envUrl) return envUrl;
+  if (envUrl) {
+    if (typeof __DEV__ !== "undefined" && __DEV__ && envUrl === HOSTED_API_BASE_URL) {
+      return LOCAL_API_BASE_URL;
+    }
+    return envUrl;
+  }
 
-  return HOSTED_API_BASE_URL;
+  return typeof __DEV__ !== "undefined" && __DEV__ ? LOCAL_API_BASE_URL : HOSTED_API_BASE_URL;
 };
 
 export const API_BASE_URL = getDefaultApiBaseUrl();
@@ -182,3 +188,40 @@ export const saveAttendance = (token, payload) =>
 
 export const getStudentAttendance = (token, studentId) =>
   request(`/api/attendance/students/${encodeURIComponent(studentId)}`, { token });
+
+export const getTeacherAttendanceToday = (token) =>
+  request("/api/teacher-attendance/today", { token });
+
+export const getTeacherAttendanceRecords = (token, params = {}) =>
+  request("/api/teacher-attendance/records", { token, params });
+
+export const teacherCheckIn = (token, payload) =>
+  request("/api/teacher-attendance/check-in", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const teacherCheckOut = (token, payload) =>
+  request("/api/teacher-attendance/check-out", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const submitCheckoutExplanation = (token, attendanceId, payload) =>
+  request(`/api/teacher-attendance/checkout-explanations/${encodeURIComponent(attendanceId)}`, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const submitTeacherLeave = (token, payload) =>
+  request("/api/teacher-attendance/leave-requests", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const getTeacherLeaves = (token) =>
+  request("/api/teacher-attendance/leave-requests", { token });
