@@ -1,18 +1,23 @@
 const trimTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
 
-const LOCAL_API_BASE_URL = "http://starpublicschool.onrender.com";
-const HOSTED_API_BASE_URL = "https://starpublicschool.onrender.com";
+const DEV_API_BASE_URL = "http://localhost:5000";
+const PROD_API_BASE_URL = "https://starpublicschool.onrender.com";
+const PROD_HOSTS = new Set([
+  "starpublicschool.onrender.com",
+  "http://starpublicschool.onrender.com",
+  "https://starpublicschool.onrender.com",
+]);
 
 export const getDefaultApiBaseUrl = () => {
   const envUrl = trimTrailingSlash(process.env.EXPO_PUBLIC_API_BASE_URL);
   if (envUrl) {
-    if (typeof __DEV__ !== "undefined" && __DEV__ && envUrl === HOSTED_API_BASE_URL) {
-      return LOCAL_API_BASE_URL;
+    if (typeof __DEV__ !== "undefined" && __DEV__ && PROD_HOSTS.has(envUrl)) {
+      return DEV_API_BASE_URL;
     }
     return envUrl;
   }
 
-  return typeof __DEV__ !== "undefined" && __DEV__ ? LOCAL_API_BASE_URL : HOSTED_API_BASE_URL;
+  return typeof __DEV__ !== "undefined" && __DEV__ ? DEV_API_BASE_URL : PROD_API_BASE_URL;
 };
 
 export const API_BASE_URL = getDefaultApiBaseUrl();
@@ -135,11 +140,18 @@ export const loginTeacher = (email, password) =>
     authErrorMessage: "Wrong email or password.",
   });
 
-export const loginStudent = (username, password) =>
+export const loginStudent = (username, credential) =>
   request("/api/student-auth/login", {
     method: "POST",
-    body: { username, password },
+    body: { username, credential },
     authErrorMessage: "Wrong username or password.",
+  });
+
+export const setStudentPassword = (token, payload) =>
+  request("/api/student-auth/set-password", {
+    method: "POST",
+    token,
+    body: payload,
   });
 
 export const refreshTeacherToken = (refreshToken) =>
@@ -188,6 +200,66 @@ export const saveAttendance = (token, payload) =>
 
 export const getStudentAttendance = (token, studentId) =>
   request(`/api/attendance/students/${encodeURIComponent(studentId)}`, { token });
+
+export const getStudentResultPublic = (params = {}) =>
+  request("/api/results", {
+    params,
+  });
+
+export const getStudentResultAvailability = (params = {}) =>
+  request("/api/results/availability", {
+    params,
+  });
+
+export const getStudentLeaves = (token) =>
+  request("/api/student-leaves/me", {
+    token,
+  });
+
+export const submitStudentLeave = (token, payload) =>
+  request("/api/student-leaves", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const getStudentLeaveRequestsAdmin = (token, params = {}) =>
+  request("/api/student-leaves/admin", {
+    token,
+    params,
+  });
+
+export const reviewStudentLeaveRequest = (token, requestId, payload) =>
+  request(`/api/student-leaves/admin/${encodeURIComponent(requestId)}`, {
+    method: "PATCH",
+    token,
+    body: payload,
+  });
+
+export const registerStudentPushToken = (token, payload) =>
+  request("/api/student-notifications/register-token", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+
+export const getStudentNotifications = (token, params = {}) =>
+  request("/api/student-notifications/me", {
+    token,
+    params,
+  });
+
+export const getStudentFeeDashboard = (token, params = {}) =>
+  request("/api/student-fees/me", {
+    token,
+    params,
+  });
+
+export const markStudentNotificationRead = (token, notificationId) =>
+  request(`/api/student-notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: "PATCH",
+    token,
+  });
 
 export const getTeacherAttendanceToday = (token) =>
   request("/api/teacher-attendance/today", { token });

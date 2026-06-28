@@ -16,6 +16,8 @@ import {
   TextInput,
   View,
 } from "react-native";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import {
@@ -27,19 +29,27 @@ import {
   getTeacherAttendanceToday,
   getTeacherLeaves,
   getStudentAttendance,
+  getStudentLeaveRequestsAdmin,
   getStudents,
   getSubjectsForClass,
   loginStudent,
   loginTeacher,
   registerAuthRefreshHandler,
+  registerStudentPushToken,
   refreshTeacherToken,
+  setStudentPassword,
   saveAttendance,
+  reviewStudentLeaveRequest,
   submitCheckoutExplanation,
   submitMarks,
   submitTeacherLeave,
   teacherCheckIn,
   teacherCheckOut,
 } from "./src/api/client";
+import StudentLeavePanel from "./src/components/student/StudentLeavePanel";
+import StudentFeeDashboardPanel from "./src/components/student/StudentFeeDashboardPanel";
+import StudentNotificationsPanel from "./src/components/student/StudentNotificationsPanel";
+import StudentResultsPanel from "./src/components/student/StudentResultsPanel";
 import { clearSession, loadSession, saveSession } from "./src/storage/session";
 import { formatDisplayDate, getDefaultAcademicYear, monthIso, todayIso } from "./src/utils/date";
 
@@ -76,6 +86,36 @@ const formatMonthLabel = (monthKey) => {
   return new Intl.DateTimeFormat("en-IN", { month: "short", year: "numeric" }).format(parsed);
 };
 
+const buildRecentMonthOptions = (count = 12) => {
+  const options = [];
+  const now = new Date();
+
+  for (let index = 0; index < count; index += 1) {
+    const monthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - index, 1));
+    const value = monthDate.toISOString().slice(0, 7);
+    options.push({ value, label: formatMonthLabel(value) });
+  }
+
+  return options;
+};
+
+const formatProfileDate = (value) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(parsed);
+};
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const getStudentDisplayName = (student) => student?.name || student?.full_name || "Student";
+
 const summarizeTeacherHistory = (records = []) =>
   records.reduce(
     (summary, record) => {
@@ -106,7 +146,7 @@ const summarizeTeacherHistory = (records = []) =>
 
 const checkoutReasonOptions = [
   { value: "Forgot Checkout", label: "Forgot check-out" },
-  { value: "GPS Problem", label: "Location issue" },
+  { value: "Location Problem", label: "Location issue" },
   { value: "Network Issue", label: "Network issue" },
   { value: "Emergency", label: "Emergency" },
   { value: "Other", label: "Other" },
@@ -151,7 +191,7 @@ const teacherTabSections = [
     title: "Reports",
     subtitle: "Analytics",
     tabs: [
-      { key: "gpsHistory", label: "Teacher's History" },
+      { key: "gpsHistory", label: "My History" },
       { key: "history", label: "History" },
       { key: "reports", label: "Reports" },
     ],
@@ -160,7 +200,7 @@ const teacherTabSections = [
 
 const teacherFeatures = [
   { key: "gpsAttendance", label: "Check In/Out", meta: "Mark arrival, departure and leave" },
-  { key: "gpsHistory", label: "Teacher's History", meta: "Monthly and yearly attendance history" },
+  { key: "gpsHistory", label: "My History", meta: "Monthly and yearly attendance history" },
   { key: "attendance", label: "Add Attendance", meta: "Mark class attendance" },
   { key: "reports", label: "Reports", meta: "Monthly class report" },
   { key: "history", label: "Student History", meta: "Student attendance record" },
@@ -174,7 +214,7 @@ const terminals = ["First", "Second", "Third", "Annual"];
 const studentTabSections = [
   {
     key: "home",
-    title: "Homes",
+    title: "Home",
     subtitle: "Overview",
     tabs: [{ key: "home", label: "Home" }],
   },
@@ -182,7 +222,23 @@ const studentTabSections = [
     key: "attendance",
     title: "Attendance",
     subtitle: "Daily record",
-    tabs: [{ key: "attendance", label: "Attendance" }],
+    tabs: [
+      { key: "attendance", label: "Attendance" },
+      { key: "leave", label: "Leave Apply" },
+      { key: "holidays", label: "Holidays" },
+    ],
+  },
+  {
+    key: "fees",
+    title: "Fee",
+    subtitle: "Dashboard",
+    tabs: [{ key: "fees", label: "Fee" }],
+  },
+  {
+    key: "results",
+    title: "Results",
+    subtitle: "Published reports",
+    tabs: [{ key: "results", label: "Results" }],
   },
 ];
 
@@ -191,6 +247,8 @@ const getActiveTabSection = (sections, tabKey) =>
 
 const getAccessToken = (data) => data?.access_token || data?.session?.access_token || "";
 const getRefreshToken = (data) => data?.session?.refresh_token || data?.refresh_token || "";
+const getMustResetPassword = (data) =>
+  Boolean(data?.must_reset_password || data?.user?.mustResetPassword || data?.user?.must_reset_password);
 const getTokenExpiresAt = (data) => {
   const tokenInfoExpiresAt = data?.token_info?.expires_at;
   if (tokenInfoExpiresAt) return tokenInfoExpiresAt;
@@ -206,6 +264,46 @@ const getTokenExpiresAt = (data) => {
   }
 
   return new Date(Date.now() + 25 * 60 * 1000).toISOString();
+};
+
+const getExpoProjectId = () =>
+  Constants?.expoConfig?.extra?.eas?.projectId ||
+  Constants?.easConfig?.projectId ||
+  Constants?.expoConfig?.extra?.projectId ||
+  null;
+
+const registerStudentDeviceToken = async (session) => {
+  if (Platform.OS === "web" || session?.role !== "student" || !session?.token) {
+    return;
+  }
+
+  const existingPermissions = await Notifications.getPermissionsAsync();
+  let status = existingPermissions?.status;
+
+  if (status !== "granted") {
+    const requested = await Notifications.requestPermissionsAsync();
+    status = requested?.status;
+  }
+
+  if (status !== "granted") {
+    return;
+  }
+
+  const projectId = getExpoProjectId();
+  const pushTokenResponse = projectId
+    ? await Notifications.getExpoPushTokenAsync({ projectId })
+    : await Notifications.getExpoPushTokenAsync();
+
+  const pushToken = pushTokenResponse?.data || pushTokenResponse?.token || "";
+  if (!pushToken) {
+    return;
+  }
+
+  await registerStudentPushToken(session.token, {
+    push_token: pushToken,
+    platform: Platform.OS,
+    device_id: `${Platform.OS}-${session.user?.id || "student"}`,
+  });
 };
 
 const shouldRefreshTeacherSession = (session, leadMs = 2 * 60 * 1000) => {
@@ -393,7 +491,9 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ExpoStatusBar style="dark" />
-      {session ? (
+      {session?.role === "student" && session.mustResetPassword ? (
+        <StudentPasswordSetup session={session} onComplete={handleSession} onLogout={handleLogout} />
+      ) : session ? (
         <Dashboard session={session} onLogout={handleLogout} />
       ) : (
         <LoginScreen onLogin={handleSession} />
@@ -435,6 +535,7 @@ function LoginScreen({ onLogin }) {
         refreshToken: getRefreshToken(response),
         tokenExpiresAt: mode === "teacher" ? getTokenExpiresAt(response) : null,
         user: response.user,
+        mustResetPassword: mode === "student" ? getMustResetPassword(response) : false,
         savedAt: new Date().toISOString(),
       });
     } catch (err) {
@@ -489,15 +590,21 @@ function LoginScreen({ onLogin }) {
             value={identity}
           />
 
-          <Text style={styles.inputLabel}>Password</Text>
+          <Text style={styles.inputLabel}>{mode === "teacher" ? "Password" : "DOB / Password"}</Text>
           <TextInput
             onChangeText={setPassword}
-            placeholder="Password"
+            placeholder={mode === "teacher" ? "Password" : "YYYY-MM-DD or password"}
             placeholderTextColor="#8a8f98"
-            secureTextEntry
+            secureTextEntry={mode === "teacher"}
             style={styles.input}
             value={password}
           />
+
+          {mode === "student" ? (
+            <Text style={styles.helperText}>
+              First login me apni date of birth use karein. Login ke baad password set karna mandatory hai.
+            </Text>
+          ) : null}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -510,14 +617,270 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+function StudentPasswordSetup({ session, onComplete, onLogout }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!password.trim() || !confirmPassword.trim()) {
+      setError("New password aur confirm password dono bharna zaruri hai.");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("Password kam se kam 6 characters ka hona chahiye.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords match nahi kar rahe.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await setStudentPassword(session.token, {
+        new_password: password,
+        confirm_password: confirmPassword,
+      });
+
+      await onComplete({
+        ...session,
+        mustResetPassword: false,
+        user: {
+          ...(session.user || {}),
+          ...(response.user || {}),
+          mustResetPassword: false,
+        },
+      });
+    } catch (err) {
+      setError(err.message || "Password set failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      style={styles.loginShell}
+    >
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.loginContent}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.brandBlock}>
+          <View style={styles.logoHalo}>
+            <View style={styles.logoMark}>
+              <Image source={schoolLogo} style={styles.logoImage} resizeMode="contain" />
+            </View>
+          </View>
+          <Text style={styles.brandKicker}>Mandatory Setup</Text>
+          <Text style={styles.brandTitle}>Set Your Password</Text>
+          <Text style={styles.brandSubtitle}>
+            First login complete ho gaya hai. Ab account secure karne ke liye naya password set karo.
+          </Text>
+        </View>
+
+        <View style={styles.formBlock}>
+          <Text style={styles.inputLabel}>Username</Text>
+          <TextInput
+            editable={false}
+            style={[styles.input, styles.readOnlyInput]}
+            value={session.user?.username || session.user?.name || ""}
+          />
+
+          <Text style={styles.inputLabel}>New Password</Text>
+          <TextInput
+            onChangeText={setPassword}
+            placeholder="New password"
+            placeholderTextColor="#8a8f98"
+            secureTextEntry
+            style={styles.input}
+            value={password}
+          />
+
+          <Text style={styles.inputLabel}>Confirm Password</Text>
+          <TextInput
+            onChangeText={setConfirmPassword}
+            placeholder="Confirm password"
+            placeholderTextColor="#8a8f98"
+            secureTextEntry
+            style={styles.input}
+            value={confirmPassword}
+          />
+
+          <Text style={styles.helperText}>
+            Is password ke baad future login me DOB ki jagah yehi password use hoga.
+          </Text>
+
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+          <Pressable disabled={loading} onPress={submit} style={[styles.primaryButton, loading && styles.disabledButton]}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Set Password</Text>}
+          </Pressable>
+
+          <Pressable onPress={onLogout} style={[styles.logoutButton, { marginTop: 10, alignItems: "center" }]}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function StudentProfilePage({ student, onBack, onLogout }) {
+  const sections = [
+    {
+      title: "Identity",
+      items: [
+        { label: "Name", value: getStudentDisplayName(student) },
+        { label: "Username", value: student?.username || "-" },
+        { label: "Date of Birth", value: formatProfileDate(student?.dateOfBirth || student?.date_of_birth) },
+        { label: "Gender", value: student?.gender || "-" },
+      ],
+    },
+    {
+      title: "Academic",
+      items: [
+        { label: "Class", value: student?.class || "-" },
+        { label: "Section", value: student?.section || "-" },
+        { label: "Roll No", value: student?.rollNo || student?.roll_no || "-" },
+        { label: "Academic Year", value: student?.academicYear || student?.academic_year || "-" },
+        { label: "Status", value: student?.status || "-" },
+      ],
+    },
+    {
+      title: "Family",
+      items: [
+        { label: "Father Name", value: student?.fatherName || student?.father_name || "-" },
+        { label: "Mother Name", value: student?.motherName || student?.mother_name || "-" },
+      ],
+    },
+    {
+      title: "Contact",
+      items: [
+        { label: "Mobile", value: student?.mobile || "-" },
+        { label: "Address", value: student?.address || "-" },
+      ],
+    },
+    {
+      title: "Admission",
+      items: [
+        { label: "Aadhaar", value: student?.aadhaarCard || student?.aadhaar_card || "-" },
+        { label: "PEN", value: student?.penNumber || student?.pen_number || "-" },
+        { label: "Admission No.", value: student?.admissionNumber || student?.admission_number || "-" },
+        { label: "Admission Date", value: formatProfileDate(student?.admissionDate || student?.admission_date) },
+        { label: "Transport", value: student?.usesTransport || student?.uses_transport ? "Yes" : "No" },
+        { label: "Transport Charge", value: student?.transportCharge ?? student?.transport_charge ?? "-" },
+      ],
+    },
+  ];
+
+  return (
+    <View style={styles.profilePageShell}>
+      <View style={styles.profilePageTopRow}>
+        <Pressable onPress={onBack} style={styles.profileBackButton}>
+          <Text style={styles.profileBackButtonText}>Back</Text>
+        </Pressable>
+        <Text style={styles.profilePageKicker}>Student Profile</Text>
+        <View style={styles.profilePageSpacer} />
+      </View>
+
+      <View style={styles.profileHeroCard}>
+        <View style={styles.profileHeroAvatar}>
+          <Text style={styles.profileHeroAvatarText}>{getInitials(getStudentDisplayName(student))}</Text>
+        </View>
+        <View style={styles.profileHeroText}>
+          <Text style={styles.profileHeroName}>{getStudentDisplayName(student)}</Text>
+          <Text style={styles.profileHeroMeta}>
+            {student?.class ? `Class ${student.class}${student?.section ? `-${student.section}` : ""}` : "Student"}
+          </Text>
+          <Text style={styles.profileHeroSubMeta}>Username: {student?.username || "-"}</Text>
+        </View>
+      </View>
+
+      <View style={styles.profileGrid}>
+        {sections.map((section) => (
+          <View key={section.title} style={styles.profileSectionCard}>
+            <Text style={styles.profileSectionTitle}>{section.title}</Text>
+            <View style={styles.profileFieldGrid}>
+              {section.items.map((item) => (
+                <View key={item.label} style={styles.profileFieldCard}>
+                  <Text style={styles.profileDetailLabel}>{item.label}</Text>
+                  <Text style={styles.profileDetailValue}>{String(item.value || "-")}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ))}
+      </View>
+
+      <Pressable onPress={onLogout} style={[styles.logoutButton, styles.profileLogoutButton]}>
+        <Text style={styles.logoutText}>Logout</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function Dashboard({ session, onLogout }) {
   const [activeTab, setActiveTab] = useState("home");
+  const [studentProfile, setStudentProfile] = useState(session.user || null);
   const tabSections = session.role === "teacher" ? teacherTabSections : studentTabSections;
   const activeSection = useMemo(() => getActiveTabSection(tabSections, activeTab), [activeTab, tabSections]);
+  const showStudentProfilePage = session.role === "student" && activeTab === "profile";
 
   useEffect(() => {
     setActiveTab(tabSections[0]?.tabs[0]?.key || "home");
   }, [session.role]);
+
+  useEffect(() => {
+    if (session.role === "student" && activeTab === "profile") {
+      return;
+    }
+
+    const hasActiveTab = tabSections.some((section) => section.tabs.some((tab) => tab.key === activeTab));
+    if (!hasActiveTab) {
+      setActiveTab(tabSections[0]?.tabs[0]?.key || "home");
+    }
+  }, [activeTab, session.role, tabSections]);
+
+  useEffect(() => {
+    if (session.role === "student") {
+      setStudentProfile(session.user || null);
+      return;
+    }
+
+    setStudentProfile(null);
+  }, [session.role, session.user]);
+
+  useEffect(() => {
+    if (session.role !== "student") return undefined;
+
+    let cancelled = false;
+
+    const syncPushToken = async () => {
+      try {
+        await registerStudentDeviceToken(session);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Student push token setup failed:", error.message);
+        }
+      }
+    };
+
+    syncPushToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session.role, session.token, session.user?.id]);
 
   return (
     <View style={styles.appShell}>
@@ -532,12 +895,29 @@ function Dashboard({ session, onLogout }) {
           </View>
         </View>
         <View style={styles.headerActions}>
-          <View style={styles.roleBadge}>
-            <Text style={styles.roleBadgeText}>{session.role === "teacher" ? "Teacher" : "Student"}</Text>
-          </View>
-          <Pressable onPress={onLogout} style={styles.logoutButton}>
-            <Text style={styles.logoutText}>Logout</Text>
-          </Pressable>
+          {session.role === "teacher" ? (
+            <>
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleBadgeText}>Teacher</Text>
+              </View>
+              <Pressable onPress={onLogout} style={styles.logoutButton}>
+                <Text style={styles.logoutText}>Logout</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              onPress={() => setActiveTab("profile")}
+              style={styles.profileButton}
+              accessibilityRole="button"
+              accessibilityLabel="Open student profile"
+            >
+              <View style={styles.profileAvatar}>
+                <Text style={styles.profileAvatarText}>
+                  {getInitials(getStudentDisplayName(studentProfile || session.user))}
+                </Text>
+              </View>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -554,34 +934,38 @@ function Dashboard({ session, onLogout }) {
           onTabChange={setActiveTab}
           sectionTabs={activeSection?.tabs || []}
           session={session}
+          onStudentLoaded={setStudentProfile}
+          onLogout={onLogout}
         />
       )}
 
-      <View style={styles.tabDock}>
-        <View style={styles.parentTabScroller}>
-          <View style={styles.parentTabBar}>
-            {tabSections.map((section) => {
-              const isActive = activeSection?.key === section.key;
-              const firstTabKey = section.tabs[0]?.key || "home";
+      {showStudentProfilePage ? null : (
+        <View style={styles.tabDock}>
+          <View style={styles.parentTabScroller}>
+            <View style={styles.parentTabBar}>
+              {tabSections.map((section) => {
+                const isActive = activeSection?.key === section.key;
+                const firstTabKey = section.tabs[0]?.key || "home";
 
-              return (
-                <Pressable
-                  key={section.key}
-                  onPress={() => setActiveTab(firstTabKey)}
-                  style={[styles.parentTabButton, isActive && styles.parentTabButtonActive]}
-                >
-                  <View style={[styles.parentTabBadge, isActive && styles.parentTabBadgeActive]}>
-                    <Text style={[styles.parentTabBadgeText, isActive && styles.parentTabBadgeTextActive]}>
-                      {String(section.title || "").slice(0, 1).toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text style={[styles.parentTabText, isActive && styles.parentTabTextActive]}>{section.title}</Text>
-                </Pressable>
-              );
-            })}
+                return (
+                  <Pressable
+                    key={section.key}
+                    onPress={() => setActiveTab(firstTabKey)}
+                    style={[styles.parentTabButton, isActive && styles.parentTabButtonActive]}
+                  >
+                    <View style={[styles.parentTabBadge, isActive && styles.parentTabBadgeActive]}>
+                      <Text style={[styles.parentTabBadgeText, isActive && styles.parentTabBadgeTextActive]}>
+                        {String(section.title || "").slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={[styles.parentTabText, isActive && styles.parentTabTextActive]}>{section.title}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -786,34 +1170,67 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
   );
 }
 
-function StudentArea({ activeTab, onTabChange, sectionTabs, session }) {
+function StudentArea({ activeTab, onTabChange, sectionTabs, session, onStudentLoaded, onLogout }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [studentProfile, setStudentProfile] = useState(session.user || null);
 
   const load = useCallback(async () => {
     setError("");
     try {
-      const response = await getStudentAttendance(session.token, session.user.id);
+      const response = await getStudentAttendance(session.token, session.user?.id);
       setDetail(response);
+      const mergedStudent = {
+        ...(session.user || {}),
+        ...(response?.student || {}),
+      };
+      setStudentProfile(mergedStudent);
+      onStudentLoaded?.(mergedStudent);
     } catch (err) {
       setError(err.message || "Student data load failed");
+      setStudentProfile(session.user || null);
+      onStudentLoaded?.(session.user || null);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [session.token, session.user.id]);
+  }, [onStudentLoaded, session.token, session.user]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    setStudentProfile(session.user || null);
+  }, [session.user]);
+
   if (loading) return <LoadingBlock label="Student dashboard loading..." />;
 
-  const student = detail?.student || session.user;
+  const student = studentProfile || detail?.student || session.user;
   const records = detail?.records || [];
   const summary = detail?.summary || summarizeRecords(records);
+
+  if (activeTab === "profile") {
+    return (
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+          />
+        }
+      >
+        {error ? <Notice tone="error" text={error} /> : null}
+        <StudentProfilePage student={student} onBack={() => onTabChange("home")} onLogout={onLogout} />
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView
@@ -828,10 +1245,14 @@ function StudentArea({ activeTab, onTabChange, sectionTabs, session }) {
         />
       }
     >
-      <SectionTabsBar tabs={sectionTabs} activeTab={activeTab} onTabChange={onTabChange} />
+      {sectionTabs.length > 1 ? <SectionTabsBar tabs={sectionTabs} activeTab={activeTab} onTabChange={onTabChange} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
-      {activeTab === "home" ? <StudentHome student={student} summary={summary} /> : null}
+      {activeTab === "home" ? <StudentHome session={session} student={student} summary={summary} /> : null}
       {activeTab === "attendance" ? <StudentAttendance records={records} summary={summary} /> : null}
+      {activeTab === "leave" ? <StudentLeavePanel session={session} student={student} /> : null}
+      {activeTab === "holidays" ? <HolidayCalendarPanel session={session} /> : null}
+      {activeTab === "fees" ? <StudentFeeDashboardPanel session={session} student={student} /> : null}
+      {activeTab === "results" ? <StudentResultsPanel student={student} /> : null}
     </ScrollView>
   );
 }
@@ -915,7 +1336,7 @@ function TeacherHome({ assignment, onOpen, records, students }) {
   );
 }
 
-function StudentHome({ student, summary }) {
+function StudentHome({ session, student, summary }) {
   const workingDays = Number(summary?.workingDays || summary.present + summary.absent + summary.late || 0);
   const percentage = Number(summary?.percentage || (workingDays ? Math.round((summary.present / workingDays) * 100) : 0));
 
@@ -942,6 +1363,10 @@ function StudentHome({ student, summary }) {
         <MetricCard label="Present" value={summary.present || 0} tone="green" />
         <MetricCard label="Absent" value={summary.absent || 0} tone="red" />
         <MetricCard label="Late" value={summary.late || 0} tone="amber" />
+      </View>
+
+      <View style={styles.homeSectionCard}>
+        <StudentNotificationsPanel session={session} limit={8} />
       </View>
     </View>
   );
@@ -2206,66 +2631,233 @@ function StudentHistoryPanel({ session, students }) {
 }
 
 function HolidayCalendarPanel({ session }) {
+  const isStudent = session.role === "student";
+  const monthOptions = useMemo(() => buildRecentMonthOptions(12), []);
   const [month, setMonth] = useState(monthIso());
+  const [monthOpen, setMonthOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("holidays");
   const [holidays, setHolidays] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState("");
   const [error, setError] = useState("");
 
+  const monthLabel = formatMonthLabel(month);
+
   useEffect(() => {
-    const loadHolidays = async () => {
+    if (isStudent && activeTab !== "holidays") {
+      setActiveTab("holidays");
+    }
+  }, [activeTab, isStudent]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPanelData = async () => {
       setLoading(true);
       setError("");
+
       try {
+        if (activeTab === "leaveRequests" && !isStudent) {
+          const response = await getStudentLeaveRequestsAdmin(session.token, { month });
+          if (!cancelled) {
+            setLeaveRequests(Array.isArray(response?.requests) ? response.requests : []);
+          }
+          return;
+        }
+
         const response = await getHolidayCalendar(session.token, { month });
-        setHolidays(response?.holidays || []);
+        if (!cancelled) {
+          setHolidays(Array.isArray(response?.holidays) ? response.holidays : []);
+        }
       } catch (err) {
-        setHolidays([]);
-        setError(err.message || "Holiday calendar load failed");
+        if (!cancelled) {
+          if (activeTab === "leaveRequests" && !isStudent) {
+            setLeaveRequests([]);
+          } else {
+            setHolidays([]);
+          }
+          setError(err.message || "Holiday calendar load failed");
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    loadHolidays();
-  }, [month, session.token]);
+
+    loadPanelData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, isStudent, month, session.token]);
+
+  const reviewLeaveRequest = async (requestId, status) => {
+    if (!requestId) return;
+
+    setSavingId(requestId);
+    setError("");
+
+    try {
+      await reviewStudentLeaveRequest(session.token, requestId, { status });
+      const response = await getStudentLeaveRequestsAdmin(session.token, { month });
+      setLeaveRequests(Array.isArray(response?.requests) ? response.requests : []);
+    } catch (err) {
+      setError(err.message || "Leave request update failed");
+    } finally {
+      setSavingId("");
+    }
+  };
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>Holiday Calendar</Text>
-      <View style={styles.inlineField}>
-        <Text style={styles.inputLabel}>Month</Text>
-        <TextInput
-          editable={false}
-          selectTextOnFocus={false}
-          style={[styles.input, styles.readOnlyInput]}
-          value={formatMonthLabel(month)}
-        />
-      </View>
-      <Notice tone="info" text="Holidays are managed by the school admin. Fridays are automatically marked as weekly off." />
-      {error ? <Notice tone="error" text={error} /> : null}
-      {loading ? <LoadingBlock label="Holidays loading..." /> : null}
-      {!loading && holidays.length ? (
-        <View style={styles.list}>
-          {holidays.map((holiday) => {
-            const startDate = holiday.start_date || holiday.holiday_date;
-            const endDate = holiday.end_date || holiday.holiday_date;
-            const dateText = startDate === endDate ? formatDisplayDate(startDate) : `${formatDisplayDate(startDate)} to ${formatDisplayDate(endDate)}`;
-            return (
-              <View key={holiday.id || `${startDate}-${holiday.title}`} style={styles.holidayCard}>
-                <View style={styles.rowBody}>
-                  <Text style={styles.rowTitle}>{holiday.title || "Holiday"}</Text>
-                  <Text style={styles.rowMeta}>{dateText}</Text>
-                  {holiday.description ? <Text style={styles.rowSub}>{holiday.description}</Text> : null}
-                </View>
-                <View style={styles.holidayTypePill}>
-                  <Text style={styles.holidayTypeText}>{holiday.type === "weekly" ? "Friday" : "Admin"}</Text>
-                </View>
+      <Text style={styles.sectionTitle}>{activeTab === "leaveRequests" && !isStudent ? "Leave Requests" : "Holiday Calendar"}</Text>
+
+      <View style={styles.holidayToolbar}>
+        <View style={styles.holidayMonthField}>
+          <Text style={styles.inputLabel}>Month</Text>
+          <View style={styles.dropdownWrap}>
+            <Pressable
+              onPress={() => setMonthOpen((prev) => !prev)}
+              style={[styles.input, styles.dropdownButton, monthOpen && styles.dropdownButtonActive]}
+            >
+              <Text style={styles.dropdownButtonText}>{monthLabel}</Text>
+              <Text style={styles.dropdownChevron}>{monthOpen ? "^" : "v"}</Text>
+            </Pressable>
+            {monthOpen ? (
+              <View style={[styles.dropdownMenu, styles.dropdownMenuScrollable, styles.holidayMonthMenu]}>
+                {monthOptions.map((option) => {
+                  const active = month === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => {
+                        setMonth(option.value);
+                        setMonthOpen(false);
+                      }}
+                      style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                    >
+                      <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option.label}</Text>
+                      <Text style={[styles.dropdownItemMeta, active && styles.dropdownItemMetaActive]}>{option.value}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-            );
-          })}
+            ) : null}
+          </View>
         </View>
+
+        {!isStudent ? (
+          <View style={styles.holidayTabSwitch}>
+            <Pressable
+              onPress={() => setActiveTab("holidays")}
+              style={[styles.holidayTabButton, activeTab === "holidays" && styles.holidayTabButtonActive]}
+            >
+              <Text style={[styles.holidayTabButtonText, activeTab === "holidays" && styles.holidayTabButtonTextActive]}>Holidays</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setActiveTab("leaveRequests")}
+              style={[styles.holidayTabButton, activeTab === "leaveRequests" && styles.holidayTabButtonActive]}
+            >
+              <Text style={[styles.holidayTabButtonText, activeTab === "leaveRequests" && styles.holidayTabButtonTextActive]}>
+                Leave Requests
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+
+      {activeTab === "leaveRequests" && !isStudent ? (
+        <Notice tone="info" text="Pending leave requests ko yahin se approve ya reject karein. Month filter se selected month ke requests dikhेंगे." />
+      ) : (
+        <Notice tone="info" text="Holidays are managed by the school admin. Fridays are automatically marked as weekly off." />
+      )}
+
+      {error ? <Notice tone="error" text={error} /> : null}
+      {loading ? <LoadingBlock label={activeTab === "leaveRequests" && !isStudent ? "Leave requests loading..." : "Holidays loading..."} /> : null}
+
+      {!loading && activeTab === "leaveRequests" && !isStudent ? (
+        leaveRequests.length ? (
+          <View style={styles.list}>
+            {leaveRequests.map((request) => {
+              const student = request.student || {};
+              const dateText =
+                request.from_date === request.to_date
+                  ? formatDisplayDate(request.from_date)
+                  : `${formatDisplayDate(request.from_date)} to ${formatDisplayDate(request.to_date)}`;
+              const status = String(request.status || "pending").toLowerCase();
+              const isPending = status === "pending";
+
+              return (
+                <View key={request.id} style={styles.leaveReviewCard}>
+                  <View style={styles.leaveReviewHeader}>
+                    <View style={styles.rowBody}>
+                      <Text style={styles.rowTitle}>{student.name || `Roll ${request.roll_no || "-"}`}</Text>
+                      <Text style={styles.rowMeta}>
+                        Class {request.class || "-"} {request.section || ""} | Roll {request.roll_no || "-"}
+                      </Text>
+                      <Text style={styles.rowSub}>{request.leave_type || "Leave"} | {dateText}</Text>
+                      <Text style={styles.rowSub}>{request.reason}</Text>
+                      {request.admin_remarks ? <Text style={styles.rowSub}>Remarks: {request.admin_remarks}</Text> : null}
+                    </View>
+                    <StatusPill status={request.status} />
+                  </View>
+
+                  {isPending ? (
+                    <View style={styles.leaveReviewActions}>
+                      <Pressable
+                        disabled={savingId === request.id}
+                        onPress={() => reviewLeaveRequest(request.id, "approved")}
+                        style={[styles.leaveReviewButton, styles.leaveReviewApprove, savingId === request.id && styles.disabledButton]}
+                      >
+                        <Text style={styles.leaveReviewButtonText}>Approve</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={savingId === request.id}
+                        onPress={() => reviewLeaveRequest(request.id, "rejected")}
+                        style={[styles.leaveReviewButton, styles.leaveReviewReject, savingId === request.id && styles.disabledButton]}
+                      >
+                        <Text style={styles.leaveReviewButtonText}>Reject</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Text style={styles.leaveReviewFooterText}>
+                      Decided on {request.decided_at ? formatProfileDate(request.decided_at) : "-"}
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <EmptyState title="No leave requests" text="Selected month me koi leave request nahi mili." />
+        )
       ) : null}
-      {!loading && !holidays.length ? (
-        <EmptyState title="No holidays" text="Selected month me holiday records nahi mile." />
+
+      {!loading && (activeTab === "holidays" || isStudent) ? (
+        holidays.length ? (
+          <View style={styles.list}>
+            {holidays.map((holiday) => {
+              const startDate = holiday.start_date || holiday.holiday_date;
+              const endDate = holiday.end_date || holiday.holiday_date;
+              const dateText =
+                startDate === endDate ? formatDisplayDate(startDate) : `${formatDisplayDate(startDate)} to ${formatDisplayDate(endDate)}`;
+              return (
+                <View key={holiday.id || `${startDate}-${holiday.title}`} style={styles.holidayCard}>
+                  <View style={styles.rowBody}>
+                    <Text style={styles.rowTitle}>{holiday.title || "Holiday"}</Text>
+                    <Text style={styles.rowMeta}>{dateText}</Text>
+                    {holiday.description ? <Text style={styles.rowSub}>{holiday.description}</Text> : null}
+                  </View>
+                  <View style={styles.holidayTypePill}>
+                    <Text style={styles.holidayTypeText}>{holiday.type === "weekly" ? "Friday" : "Admin"}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : (
+          <EmptyState title="No holidays" text="Selected month me holiday records nahi mile." />
+        )
       ) : null}
     </View>
   );
@@ -2677,6 +3269,13 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: 13,
   },
+  helperText: {
+    color: "#5b6470",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 10,
+  },
   readOnlyInput: {
     backgroundColor: "#f3f4f6",
     color: "#475569",
@@ -2966,6 +3565,25 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 6,
   },
+  profileButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  profileAvatar: {
+    alignItems: "center",
+    backgroundColor: "#0f5f63",
+    borderColor: "#0b474a",
+    borderRadius: 999,
+    borderWidth: 2,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  profileAvatarText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
   roleBadge: {
     backgroundColor: "#fff8e8",
     borderColor: "#e4c27a",
@@ -2997,6 +3615,223 @@ const styles = StyleSheet.create({
     color: "#0f5f63",
     fontSize: 12,
     fontWeight: "900",
+  },
+  profilePageShell: {
+    backgroundColor: "#fffdf7",
+    borderColor: "#e0d5b6",
+    borderRadius: 22,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 14,
+  },
+  profilePageTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  profileBackButton: {
+    alignItems: "center",
+    backgroundColor: "#0f5f63",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  profileBackButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  profilePageKicker: {
+    color: "#9a6c1c",
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textAlign: "center",
+    textTransform: "uppercase",
+  },
+  profilePageSpacer: {
+    width: 58,
+  },
+  profileHeroCard: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#d9e2ec",
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 16,
+  },
+  profileHeroAvatar: {
+    alignItems: "center",
+    backgroundColor: "#0f5f63",
+    borderRadius: 20,
+    height: 68,
+    justifyContent: "center",
+    width: 68,
+  },
+  profileHeroAvatarText: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  profileHeroText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileHeroName: {
+    color: "#152238",
+    fontSize: 23,
+    fontWeight: "900",
+  },
+  profileHeroMeta: {
+    color: "#52606d",
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  profileHeroSubMeta: {
+    color: "#6b7280",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  profileGrid: {
+    gap: 12,
+    marginTop: 12,
+  },
+  profileSectionCard: {
+    backgroundColor: "#fff",
+    borderColor: "#dde6ef",
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: "hidden",
+    padding: 12,
+  },
+  profileSectionTitle: {
+    color: "#9a6c1c",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    textTransform: "uppercase",
+  },
+  profileFieldGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  profileFieldCard: {
+    backgroundColor: "#f8fbff",
+    borderColor: "#e6edf5",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  profileModalBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(7, 15, 25, 0.56)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 18,
+  },
+  profileModalCard: {
+    backgroundColor: "#fffdf7",
+    borderColor: "#d8c9a5",
+    borderRadius: 22,
+    borderWidth: 1,
+    maxHeight: "84%",
+    padding: 16,
+    width: "100%",
+  },
+  profileModalHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+  },
+  profileModalAvatar: {
+    alignItems: "center",
+    backgroundColor: "#0f5f63",
+    borderRadius: 18,
+    height: 56,
+    justifyContent: "center",
+    width: 56,
+  },
+  profileModalAvatarText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  profileModalHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  profileModalEyebrow: {
+    color: "#9a6c1c",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  profileModalName: {
+    color: "#152238",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  profileModalMeta: {
+    color: "#52606d",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  profileCloseButton: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#d6dbe2",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
+  profileCloseButtonText: {
+    color: "#334155",
+    fontSize: 18,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  profileModalBody: {
+    paddingBottom: 10,
+    paddingTop: 14,
+  },
+  profileDetailRow: {
+    borderBottomColor: "#eef1f5",
+    borderBottomWidth: 1,
+    paddingVertical: 10,
+  },
+  profileDetailLabel: {
+    color: "#6b7280",
+    fontSize: 11,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  profileDetailValue: {
+    color: "#17202a",
+    fontSize: 14,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  profileLogoutButton: {
+    alignItems: "center",
+    marginTop: 10,
   },
   content: {
     padding: 16,
@@ -3194,6 +4029,9 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 10,
   },
+  homeSectionCard: {
+    marginTop: 18,
+  },
   metricCard: {
     borderRadius: 8,
     minHeight: 86,
@@ -3371,6 +4209,90 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
   },
+  holidayToolbar: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 10,
+  },
+  holidayMonthField: {
+    flex: 1,
+  },
+  holidayTabSwitch: {
+    flexDirection: "row",
+    gap: 8,
+    flex: 1,
+  },
+  holidayTabButton: {
+    alignItems: "center",
+    backgroundColor: "#f3f4f6",
+    borderColor: "#dbe4f0",
+    borderRadius: 999,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  holidayTabButtonActive: {
+    backgroundColor: "#0f5f63",
+    borderColor: "#0b474a",
+  },
+  holidayTabButtonText: {
+    color: "#52606d",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  holidayTabButtonTextActive: {
+    color: "#fff",
+  },
+  holidayMonthMenu: {
+    marginTop: 8,
+  },
+  leaveReviewCard: {
+    backgroundColor: "#fff",
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12,
+  },
+  leaveReviewHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+  },
+  leaveReviewActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  leaveReviewButton: {
+    alignItems: "center",
+    borderRadius: 10,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  leaveReviewApprove: {
+    backgroundColor: "#0f766e",
+  },
+  leaveReviewReject: {
+    backgroundColor: "#b91c1c",
+  },
+  leaveReviewButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  leaveReviewFooterText: {
+    color: "#667085",
+    fontSize: 12,
+    fontWeight: "700",
+  },
   inlineField: {
     marginBottom: 12,
   },
@@ -3392,14 +4314,20 @@ const styles = StyleSheet.create({
     borderColor: "#dbe4f0",
     borderRadius: 14,
     borderWidth: 1,
-    minHeight: 42,
+    minHeight: 54,
     minWidth: 78,
     justifyContent: "center",
     paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   terminalButtonActive: {
     backgroundColor: "#1d4ed8",
     borderColor: "#1d4ed8",
+  },
+  terminalButtonLocked: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#cbd5e1",
+    opacity: 0.7,
   },
   terminalText: {
     color: "#52606d",
@@ -3408,6 +4336,22 @@ const styles = StyleSheet.create({
   },
   terminalTextActive: {
     color: "#fff",
+  },
+  terminalTextLocked: {
+    color: "#64748b",
+  },
+  terminalSubtext: {
+    color: "#94a3b8",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 2,
+    textTransform: "uppercase",
+  },
+  terminalSubtextActive: {
+    color: "#dbeafe",
+  },
+  terminalSubtextLocked: {
+    color: "#94a3b8",
   },
   studentChip: {
     backgroundColor: "#fff",
