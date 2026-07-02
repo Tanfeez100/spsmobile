@@ -1055,7 +1055,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
     }
     const missing = students.filter((student) => !statuses[student.id]);
     if (missing.length) {
-      Alert.alert("Attendance missing", "Sabhi students ka status select karein.");
+      Alert.alert("Attendance missing", "All studenska status select karein.");
       return;
     }
 
