@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { getStudentFeeDashboard } from "../../api/client";
 
 const currency = new Intl.NumberFormat("en-IN", {
@@ -113,7 +114,10 @@ export default function StudentFeeDashboardPanel({ session, student }) {
     <View style={styles.panel}>
       <View style={styles.headerRow}>
         <View style={styles.headerTextBlock}>
-          <Text style={styles.sectionTitle}>Fee Dashboard</Text>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="credit-card" size={18} color="#1458bf" />
+            <Text style={styles.sectionTitle}>Fee Dashboard</Text>
+          </View>
           <Text style={styles.sectionSubtitle}>
             {student?.name ? `${student.name} • ` : ""}
             Year-wise fee history
@@ -154,7 +158,10 @@ export default function StudentFeeDashboardPanel({ session, student }) {
 
       {!loading && visiblePaymentHistory.length ? (
         <View style={styles.paymentHistoryBlock}>
-          <Text style={styles.paymentHistoryTitle}>Payment History</Text>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="wallet" size={18} color="#1458bf" />
+            <Text style={styles.paymentHistoryTitle}>Payment History</Text>
+          </View>
           <Text style={styles.paymentHistorySubtitle}>Month-wise payment records</Text>
           <View style={styles.paymentHistoryList}>
             {visiblePaymentHistory.map((payment) => (
@@ -262,10 +269,25 @@ export default function StudentFeeDashboardPanel({ session, student }) {
 }
 
 function MetricCard({ label, value, tone }) {
+  const iconName =
+    label === "Total Billed"
+      ? "file-text"
+      : label === "Total Paid"
+      ? "check-circle"
+      : label === "Due"
+      ? "alert-circle"
+      : "calendar";
+  const iconColor = tone === "green" ? "#16a34a" : tone === "red" ? "#ef4444" : tone === "amber" ? "#f59e0b" : "#1458bf";
+
   return (
     <View style={[styles.metricCard, styles[`metric_${tone}`]]}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
+      <View style={styles.metricIconWrap}>
+        <Feather name={iconName} size={18} color={iconColor} />
+      </View>
+      <View style={styles.metricBody}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -282,7 +304,10 @@ function DetailPill({ label, value }) {
 function Notice({ tone, text }) {
   return (
     <View style={[styles.notice, tone === "error" ? styles.noticeError : styles.noticeInfo]}>
-      <Text style={styles.noticeText}>{text}</Text>
+      <View style={styles.noticeRow}>
+        <Feather name={tone === "error" ? "alert-circle" : "info"} size={18} color={tone === "error" ? "#9f2f21" : "#1458bf"} />
+        <Text style={styles.noticeText}>{text}</Text>
+      </View>
     </View>
   );
 }
@@ -319,12 +344,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    color: "#17202a",
-    fontSize: 18,
+    color: "#0b2f63",
+    fontSize: 22,
     fontWeight: "900",
   },
+  sectionTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
   sectionSubtitle: {
-    color: "#667085",
+    color: "#6b7c95",
     fontSize: 12,
     fontWeight: "700",
     marginTop: 4,
@@ -338,15 +368,15 @@ const styles = StyleSheet.create({
   },
   yearChip: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
+    borderColor: "#dfe7f2",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
   },
   yearChipActive: {
-    backgroundColor: "#0f5f63",
-    borderColor: "#0f5f63",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
   },
   yearChipText: {
     color: "#334155",
@@ -362,44 +392,69 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   metricCard: {
-    borderRadius: 16,
-    minHeight: 88,
-    padding: 14,
+    alignItems: "center",
+    borderColor: "#edf2fa",
+    flexDirection: "row",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 12,
+    minHeight: 102,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
     width: "48%",
   },
+  metricIconWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.66)",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  metricBody: {
+    flex: 1,
+  },
   metric_teal: {
-    backgroundColor: "#e0f2fe",
+    backgroundColor: "#edf4ff",
   },
   metric_green: {
-    backgroundColor: "#dcfce7",
+    backgroundColor: "#ecfbf1",
   },
   metric_red: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: "#fff1f0",
   },
   metric_amber: {
-    backgroundColor: "#fef3c7",
+    backgroundColor: "#fff7e5",
   },
   metricLabel: {
-    color: "#334155",
-    fontSize: 12,
+    color: "#5f6f86",
+    fontSize: 11,
     fontWeight: "900",
+    letterSpacing: 0.3,
     textTransform: "uppercase",
   },
   metricValue: {
-    color: "#0f172a",
-    fontSize: 22,
+    color: "#0b2f63",
+    fontSize: 21,
     fontWeight: "900",
-    marginTop: 8,
+    marginTop: 10,
   },
   list: {
     gap: 10,
   },
   card: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   cardHeader: {
     alignItems: "flex-start",
@@ -437,9 +492,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   detailPill: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
+    backgroundColor: "#f8fbff",
+    borderColor: "#e3ebf5",
+    borderRadius: 16,
     borderWidth: 1,
     minWidth: "47%",
     padding: 10,
@@ -457,9 +512,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   latestRow: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
+    backgroundColor: "#f8fbff",
+    borderColor: "#e3ebf5",
+    borderRadius: 16,
     borderWidth: 1,
     marginTop: 12,
     padding: 10,
@@ -511,33 +566,43 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   notice: {
-    borderRadius: 12,
+    borderRadius: 18,
     marginBottom: 2,
-    padding: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   noticeError: {
-    backgroundColor: "#fef2f2",
-    borderColor: "#fecaca",
+    backgroundColor: "#fff3f1",
+    borderColor: "#f4c2ba",
     borderWidth: 1,
   },
   noticeInfo: {
-    backgroundColor: "#ecfeff",
-    borderColor: "#a5f3fc",
+    backgroundColor: "#eef7ff",
+    borderColor: "#c9defa",
     borderWidth: 1,
   },
   noticeText: {
-    color: "#0f172a",
+    color: "#17305d",
     fontSize: 12,
     fontWeight: "800",
+  },
+  noticeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
   },
   emptyState: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginTop: 4,
-    padding: 18,
+    padding: 22,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   emptyTitle: {
     color: "#17202a",
@@ -571,10 +636,14 @@ const styles = StyleSheet.create({
   },
   paymentHistoryCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   paymentHistoryHeader: {
     alignItems: "center",

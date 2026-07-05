@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { getStudentNotifications, markStudentNotificationRead } from "../../api/client";
 
 const DEFAULT_PAGE_SIZE = 4;
@@ -200,7 +201,10 @@ export default function StudentNotificationsPanel({ session, limit = DEFAULT_PAG
     <View style={styles.panel}>
       <View style={styles.headerRow}>
         <View style={styles.headerTextBlock}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="bell" size={18} color="#1458bf" />
+            <Text style={styles.sectionTitle}>Notifications</Text>
+          </View>
           <Text style={styles.sectionSubtitle}>
             {activeFeed === "bills" ? "Bill updates" : "Invoice updates"} | Latest first
           </Text>
@@ -220,13 +224,19 @@ export default function StudentNotificationsPanel({ session, limit = DEFAULT_PAG
           onPress={() => setActiveFeed("bills")}
           style={[styles.feedTab, resolvedFeed === "bills" && styles.feedTabActive]}
         >
-          <Text style={[styles.feedTabText, resolvedFeed === "bills" && styles.feedTabTextActive]}>Bills</Text>
+          <View style={styles.feedTabInner}>
+            <Feather name="file-text" size={14} color={resolvedFeed === "bills" ? "#fff" : "#1458bf"} />
+            <Text style={[styles.feedTabText, resolvedFeed === "bills" && styles.feedTabTextActive]}>Bills</Text>
+          </View>
         </Pressable>
         <Pressable
           onPress={() => setActiveFeed("invoices")}
           style={[styles.feedTab, resolvedFeed === "invoices" && styles.feedTabActive]}
         >
-          <Text style={[styles.feedTabText, resolvedFeed === "invoices" && styles.feedTabTextActive]}>Invoices</Text>
+          <View style={styles.feedTabInner}>
+            <Feather name="clipboard" size={14} color={resolvedFeed === "invoices" ? "#fff" : "#1458bf"} />
+            <Text style={[styles.feedTabText, resolvedFeed === "invoices" && styles.feedTabTextActive]}>Invoices</Text>
+          </View>
         </Pressable>
       </View>
 
@@ -334,7 +344,10 @@ export default function StudentNotificationsPanel({ session, limit = DEFAULT_PAG
           {loadingMore ? (
             <ActivityIndicator color="#0f5f63" />
           ) : (
-            <Text style={styles.loadMoreText}>Load more</Text>
+            <View style={styles.loadMoreRow}>
+              <Feather name="chevrons-down" size={16} color="#1458bf" />
+              <Text style={styles.loadMoreText}>Load more</Text>
+            </View>
           )}
         </Pressable>
       ) : null}
@@ -345,7 +358,10 @@ export default function StudentNotificationsPanel({ session, limit = DEFAULT_PAG
 function Notice({ tone, text }) {
   return (
     <View style={[styles.notice, tone === "error" ? styles.noticeError : styles.noticeInfo]}>
-      <Text style={styles.noticeText}>{text}</Text>
+      <View style={styles.noticeRow}>
+        <Feather name={tone === "error" ? "alert-circle" : "info"} size={18} color={tone === "error" ? "#9f2f21" : "#1458bf"} />
+        <Text style={styles.noticeText}>{text}</Text>
+      </View>
     </View>
   );
 }
@@ -382,12 +398,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    color: "#17202a",
-    fontSize: 18,
+    color: "#0b2f63",
+    fontSize: 22,
     fontWeight: "900",
   },
+  sectionTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
   sectionSubtitle: {
-    color: "#667085",
+    color: "#6b7c95",
     fontSize: 12,
     fontWeight: "700",
     marginTop: 4,
@@ -398,20 +419,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   counterPill: {
-    backgroundColor: "#e6f6f5",
+    backgroundColor: "#edf4ff",
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   counterText: {
-    color: "#0f5f63",
+    color: "#1458bf",
     fontSize: 12,
     fontWeight: "900",
   },
   refreshButton: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
+    borderColor: "#dfe7f2",
     borderRadius: 999,
     borderWidth: 1,
     minWidth: 76,
@@ -419,7 +440,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   refreshText: {
-    color: "#0f5f63",
+    color: "#1458bf",
     fontSize: 12,
     fontWeight: "900",
   },
@@ -430,15 +451,15 @@ const styles = StyleSheet.create({
   feedTab: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
+    borderColor: "#dfe7f2",
     borderRadius: 999,
     borderWidth: 1,
     flex: 1,
     paddingVertical: 10,
   },
   feedTabActive: {
-    backgroundColor: "#0f5f63",
-    borderColor: "#0f5f63",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
   },
   feedTabText: {
     color: "#334155",
@@ -448,19 +469,28 @@ const styles = StyleSheet.create({
   feedTabTextActive: {
     color: "#fff",
   },
+  feedTabInner: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
   list: {
     gap: 10,
   },
   card: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   cardUnread: {
-    borderColor: "#0f5f63",
-    shadowColor: "#0f5f63",
+    borderColor: "#1458bf",
+    shadowColor: "#1458bf",
     shadowOpacity: 0.12,
     shadowRadius: 12,
   },
@@ -490,13 +520,13 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   statusUnread: {
-    backgroundColor: "#e6f6f5",
+    backgroundColor: "#edf4ff",
   },
   statusRead: {
     backgroundColor: "#edf2f7",
   },
   statusText: {
-    color: "#0f5f63",
+    color: "#1458bf",
     fontSize: 11,
     fontWeight: "900",
   },
@@ -509,11 +539,11 @@ const styles = StyleSheet.create({
   },
   instructionBox: {
     backgroundColor: "#fff8e6",
-    borderColor: "#f3d48a",
-    borderRadius: 12,
+    borderColor: "#f2d997",
+    borderRadius: 16,
     borderWidth: 1,
     marginTop: 12,
-    padding: 10,
+    padding: 12,
   },
   instructionLabel: {
     color: "#8a5a00",
@@ -531,8 +561,8 @@ const styles = StyleSheet.create({
   dueBox: {
     alignItems: "center",
     backgroundColor: "#fef2f2",
-    borderColor: "#fecaca",
-    borderRadius: 12,
+    borderColor: "#f4c2ba",
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -558,9 +588,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   detailItem: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
+    backgroundColor: "#f8fbff",
+    borderColor: "#e3ebf5",
+    borderRadius: 16,
     borderWidth: 1,
     minWidth: "47%",
     padding: 10,
@@ -579,8 +609,8 @@ const styles = StyleSheet.create({
   },
   expandButton: {
     alignSelf: "flex-start",
-    backgroundColor: "#f8fafc",
-    borderColor: "#dbe4f0",
+    backgroundColor: "#edf4ff",
+    borderColor: "#c9daf7",
     borderRadius: 999,
     borderWidth: 1,
     marginTop: 10,
@@ -588,7 +618,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   expandButtonText: {
-    color: "#0f5f63",
+    color: "#1458bf",
     fontSize: 12,
     fontWeight: "900",
   },
@@ -605,33 +635,43 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   notice: {
-    borderRadius: 12,
+    borderRadius: 18,
     marginBottom: 10,
-    padding: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   noticeError: {
-    backgroundColor: "#fef2f2",
-    borderColor: "#fecaca",
+    backgroundColor: "#fff3f1",
+    borderColor: "#f4c2ba",
     borderWidth: 1,
   },
   noticeInfo: {
-    backgroundColor: "#ecfeff",
-    borderColor: "#a5f3fc",
+    backgroundColor: "#eef7ff",
+    borderColor: "#c9defa",
     borderWidth: 1,
   },
   noticeText: {
-    color: "#0f172a",
+    color: "#17305d",
     fontSize: 12,
     fontWeight: "800",
+  },
+  noticeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
   },
   emptyState: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginTop: 6,
-    padding: 18,
+    padding: 22,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   emptyTitle: {
     color: "#17202a",
@@ -647,16 +687,21 @@ const styles = StyleSheet.create({
   },
   loadMoreButton: {
     alignItems: "center",
-    backgroundColor: "#e6f6f5",
-    borderColor: "#b7e7e4",
-    borderRadius: 14,
+    backgroundColor: "#edf4ff",
+    borderColor: "#c9daf7",
+    borderRadius: 18,
     borderWidth: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
   },
   loadMoreText: {
-    color: "#0f5f63",
+    color: "#1458bf",
     fontSize: 13,
     fontWeight: "900",
+  },
+  loadMoreRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
   },
   disabledButton: {
     opacity: 0.65,
@@ -664,17 +709,17 @@ const styles = StyleSheet.create({
   loadingBlock: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
     justifyContent: "center",
     marginBottom: 10,
-    padding: 14,
+    padding: 16,
   },
   loadingText: {
-    color: "#52606d",
+    color: "#1458bf",
     fontSize: 12,
     fontWeight: "800",
   },

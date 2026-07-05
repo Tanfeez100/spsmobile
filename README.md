@@ -4,6 +4,7 @@ Expo mobile app for Star Public School sps teacher and student workflows.
 
 ## Features
 
+- Full feature map: [FEATURES_DETAILED.md](./FEATURES_DETAILED.md)
 - Teacher login with existing `/api/auth/login`
 - Student login with existing `/api/student-auth/login`
 - Teacher assigned class/section bootstrap
