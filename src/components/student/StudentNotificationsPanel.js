@@ -252,11 +252,12 @@ export default function StudentNotificationsPanel({ session, limit = DEFAULT_PAG
             const details = flattenDetails(notification.notification_data || {});
             const unread = !notification.is_read;
             const paymentInstruction = getPaymentInstruction(notification);
-            const dueAmount =
-              notification.notification_data?.remaining ??
-              notification.notification_data?.due ??
-              notification.notification_data?.net_payable ??
-              null;
+            const cardMetaText = isBillNotification
+              ? "Fee Bill"
+              : `${prettyLabel(notification.notification_type)}${notification.source_type ? ` • ${prettyLabel(notification.source_type)}` : ""}`;
+            const cardBodyText = isBillNotification
+              ? paymentInstruction || "A new fee bill has been generated."
+              : notification.body || "-";
 
             return (
               <Pressable
@@ -267,24 +268,14 @@ export default function StudentNotificationsPanel({ session, limit = DEFAULT_PAG
                 <View style={styles.cardHeader}>
                   <View style={styles.titleBlock}>
                     <Text style={styles.cardTitle}>{notification.title || "Notification"}</Text>
-                    <Text style={styles.cardMeta}>
-                      {prettyLabel(notification.notification_type)}
-                      {notification.source_type ? ` • ${prettyLabel(notification.source_type)}` : ""}
-                    </Text>
+                    <Text style={styles.cardMeta}>{cardMetaText}</Text>
                   </View>
                   <View style={[styles.statusPill, unread ? styles.statusUnread : styles.statusRead]}>
                     <Text style={styles.statusText}>{unread ? "Unread" : "Read"}</Text>
                   </View>
                 </View>
 
-                <Text style={styles.body}>{notification.body || "-"}</Text>
-
-                {isBillNotification && dueAmount !== null && dueAmount !== undefined ? (
-                  <View style={styles.dueBox}>
-                    <Text style={styles.dueLabel}>Due</Text>
-                    <Text style={styles.dueValue}>{formatMoney(dueAmount)}</Text>
-                  </View>
-                ) : null}
+                <Text style={styles.body}>{cardBodyText}</Text>
 
                 {paymentInstruction ? (
                   isExpanded ? (
@@ -724,3 +715,4 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 });
+

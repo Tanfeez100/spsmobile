@@ -5,6 +5,7 @@ import {
   AppState,
   KeyboardAvoidingView,
   Image,
+  Linking,
   Platform,
   Pressable,
   RefreshControl,
@@ -14,6 +15,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -51,7 +53,14 @@ import StudentLeavePanel from "./src/components/student/StudentLeavePanel";
 import StudentFeeDashboardPanel from "./src/components/student/StudentFeeDashboardPanel";
 import StudentNotificationsPanel from "./src/components/student/StudentNotificationsPanel";
 import StudentResultsPanel from "./src/components/student/StudentResultsPanel";
-import { clearSession, loadSession, saveSession } from "./src/storage/session";
+import {
+  clearSavedLogin,
+  clearSession,
+  loadSavedLogin,
+  loadSession,
+  saveSavedLogin,
+  saveSession,
+} from "./src/storage/session";
 import { formatDisplayDate, getDefaultAcademicYear, monthIso, todayIso } from "./src/utils/date";
 
 const schoolLogo = require("./src/assets/logo.png");
@@ -68,6 +77,28 @@ const bookIllustration = require("./src/assets/bookimage.png");
 const SCHOOL_NAME = "Star Public School";
 const SCHOOL_SHORT_NAME = "SPS";
 const SCHOOL_TAGLINE = "Learning, discipline and daily progress";
+const SCHOOL_PHONE = "+91 9006457330";
+const SCHOOL_EMAIL = "a9006457330@gmail.com";
+const SCHOOL_ADDRESS = "Meghwal mathia Bazar, West Champaran, Bihar 845106";
+const SCHOOL_SUPPORT_HOURS = "Monday to Saturday, 8:00 AM to 2:00 PM";
+
+const privacyPolicyPoints = [
+  "We collect only information required for admission, attendance, fees, examination, communication and school administration.",
+  "For teachers, GPS attendance is used only for daily check-in and check-out.",
+  "Student and teacher data is used to run the school ERP and to communicate important school updates.",
+  "Passwords, authentication tokens and school records are stored securely and accessed only by authorized staff.",
+  "Data is retained for as long as needed for school operations, statutory records and legitimate administrative purposes.",
+  "Users may request correction or deletion of information through the school office, subject to school and legal record requirements.",
+];
+
+const termsPoints = [
+  "The app is for school-related use only.",
+  "Users must keep their login details secure and must not share accounts with others.",
+  "The school owns the application content, records and configuration shown inside the app.",
+  "Users must not misuse the app, attempt unauthorized access, or interfere with school systems.",
+  "The school may suspend access if misuse, fraud or security risk is detected.",
+  "The app is provided to support school operations and the school is not liable for issues caused by misuse, device problems or network outages.",
+];
 
 const statusOptions = [
   { key: "present", label: "Present" },
@@ -126,6 +157,26 @@ Notifications.setNotificationHandler({
 });
 
 const getStudentDisplayName = (student) => student?.name || student?.full_name || "Student";
+
+const getProfilePhotoSource = (user) => {
+  const photoUrl =
+    user?.photo_url ||
+    user?.photoUrl ||
+    user?.profile_photo ||
+    user?.profilePhoto ||
+    user?.avatar_url ||
+    user?.avatarUrl ||
+    user?.image_url ||
+    user?.imageUrl ||
+    user?.photo ||
+    user?.avatar;
+
+  if (photoUrl) {
+    return { uri: photoUrl };
+  }
+
+  return schoolCelebration;
+};
 
 const summarizeTeacherHistory = (records = []) =>
   records.reduce(
@@ -291,12 +342,12 @@ const getTokenExpiresAt = (data) => {
     return new Date(sessionExpiresAt * 1000).toISOString();
   }
 
-  const expiresIn = data?.session?.expires_in || data?.expires_in;
+  const expiresIn = data?.token_info?.expires_in || data?.session?.expires_in || data?.expires_in;
   if (Number.isFinite(Number(expiresIn))) {
     return new Date(Date.now() + Number(expiresIn) * 1000).toISOString();
   }
 
-  return new Date(Date.now() + 25 * 60 * 1000).toISOString();
+  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 };
 
 const getExpoProjectId = () =>
@@ -385,6 +436,7 @@ const summarizeRecords = (records = []) =>
 export default function App() {
   const [booting, setBooting] = useState(true);
   const [session, setSessionState] = useState(null);
+  const [legalView, setLegalView] = useState(null);
   const refreshInFlightRef = useRef(null);
 
   useEffect(() => {
@@ -521,31 +573,89 @@ export default function App() {
     );
   }
 
+  if (legalView) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ExpoStatusBar style="dark" />
+        <LegalScreen
+          type={legalView}
+          onBack={() => setLegalView(null)}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ExpoStatusBar style="dark" />
       {session?.role === "student" && session.mustResetPassword ? (
         <StudentPasswordSetup session={session} onComplete={handleSession} onLogout={handleLogout} />
       ) : session ? (
-        <Dashboard session={session} onLogout={handleLogout} />
+        <Dashboard
+          session={session}
+          onLogout={handleLogout}
+          onOpenPrivacy={() => setLegalView("privacy")}
+          onOpenTerms={() => setLegalView("terms")}
+          onOpenContact={() => setLegalView("contact")}
+        />
       ) : (
-        <LoginScreen onLogin={handleSession} />
+        <LoginScreen
+          onLogin={handleSession}
+          onOpenPrivacy={() => setLegalView("privacy")}
+          onOpenTerms={() => setLegalView("terms")}
+          onOpenContact={() => setLegalView("contact")}
+        />
       )}
     </SafeAreaView>
   );
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   const [mode, setMode] = useState("teacher");
   const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadSavedLogin(mode)
+      .then((savedLogin) => {
+        if (cancelled) return;
+
+        if (savedLogin?.identity && savedLogin?.password) {
+          setIdentity(savedLogin.identity);
+          setPassword(savedLogin.password);
+          setRememberPassword(true);
+          return;
+        }
+
+        setIdentity("");
+        setPassword("");
+        setRememberPassword(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRememberPassword(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   const submit = async () => {
     if (!identity.trim() || !password) {
       setError("Login details bharna zaruri hai.");
+      return;
+    }
+
+    if (!agreed) {
+      setError("Privacy Policy aur Terms & Conditions accept karna zaruri hai.");
       return;
     }
 
@@ -563,15 +673,23 @@ function LoginScreen({ onLogin }) {
         throw new Error("Login response me token nahi mila.");
       }
 
-      await onLogin({
+      const nextSession = {
         role: mode,
         token,
         refreshToken: getRefreshToken(response),
-        tokenExpiresAt: mode === "teacher" ? getTokenExpiresAt(response) : null,
+        tokenExpiresAt: getTokenExpiresAt(response),
         user: response.user,
         mustResetPassword: mode === "student" ? getMustResetPassword(response) : false,
         savedAt: new Date().toISOString(),
-      });
+      };
+
+      if (rememberPassword) {
+        await saveSavedLogin(mode, { identity, password });
+      } else {
+        await clearSavedLogin(mode);
+      }
+
+      await onLogin(nextSession);
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -695,20 +813,45 @@ function LoginScreen({ onLogin }) {
             {error ? <Text style={styles.portalErrorText}>{error}</Text> : null}
 
             <View style={styles.portalOptionsRow}>
-              <View style={styles.portalRememberRow}>
-                <View style={styles.portalCheckBox}>
+              <Pressable
+                onPress={() => setRememberPassword((current) => !current)}
+                style={styles.portalRememberRow}
+              >
+                <View style={[styles.portalCheckBox, rememberPassword && styles.portalCheckBoxActive]}>
                   <Text style={styles.portalCheckText}>✓</Text>
                 </View>
-                <Text style={styles.portalRememberText}>Remember me</Text>
-              </View>
+                <Text style={styles.portalRememberText}>Save password</Text>
+              </Pressable>
               <Pressable onPress={() => Alert.alert("Forgot Password", "Please contact the school office.")}>
                 <Text style={styles.portalForgotText}>Forgot Password?</Text>
               </Pressable>
             </View>
 
-            <Pressable disabled={loading} onPress={submit} style={[styles.portalLoginButton, loading && styles.disabledButton]}>
+            <View style={styles.portalConsentRow}>
+              <Pressable
+                onPress={() => setAgreed((current) => !current)}
+                style={[styles.portalConsentBox, agreed && styles.portalConsentBoxActive]}
+              >
+                <Text style={styles.portalConsentCheck}>{agreed ? "✓" : ""}</Text>
+              </Pressable>
+              <Text style={styles.portalConsentText}>I agree to the Privacy Policy and Terms &amp; Conditions.</Text>
+            </View>
+
+            <Pressable disabled={loading || !agreed} onPress={submit} style={[styles.portalLoginButton, (loading || !agreed) && styles.disabledButton]}>
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.portalLoginText}>Login</Text>}
             </Pressable>
+
+            <View style={styles.portalLegalLinksRow}>
+              <Pressable onPress={onOpenPrivacy} style={styles.portalLegalLinkButton}>
+                <Text style={styles.portalLegalLinkText}>Privacy Policy</Text>
+              </Pressable>
+              <Pressable onPress={onOpenTerms} style={styles.portalLegalLinkButton}>
+                <Text style={styles.portalLegalLinkText}>Terms & Conditions</Text>
+              </Pressable>
+              <Pressable onPress={onOpenContact} style={styles.portalLegalLinkButton}>
+                <Text style={styles.portalLegalLinkText}>Contact School</Text>
+              </Pressable>
+            </View>
 
           </View>
 
@@ -849,7 +992,7 @@ function StudentPasswordSetup({ session, onComplete, onLogout }) {
   );
 }
 
-function StudentProfilePage({ student, onBack, onLogout }) {
+function StudentProfilePage({ student, onBack, onLogout, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   const sections = [
     {
       title: "Identity",
@@ -909,7 +1052,7 @@ function StudentProfilePage({ student, onBack, onLogout }) {
 
       <View style={styles.profileHeroCard}>
         <View style={styles.profileHeroAvatar}>
-          <Text style={styles.profileHeroAvatarText}>{getInitials(getStudentDisplayName(student))}</Text>
+          <Image source={getProfilePhotoSource(student)} style={styles.profileHeroAvatarImage} resizeMode="cover" />
         </View>
         <View style={styles.profileHeroText}>
           <Text style={styles.profileHeroName}>{getStudentDisplayName(student)}</Text>
@@ -936,6 +1079,21 @@ function StudentProfilePage({ student, onBack, onLogout }) {
         ))}
       </View>
 
+      <View style={styles.profileMenuCard}>
+        <Text style={styles.profileMenuTitle}>Profile Menu</Text>
+        <View style={styles.profileMenuGrid}>
+          <Pressable onPress={onOpenPrivacy} style={styles.profileMenuButton}>
+            <Text style={styles.profileMenuButtonText}>Privacy Policy</Text>
+          </Pressable>
+          <Pressable onPress={onOpenTerms} style={styles.profileMenuButton}>
+            <Text style={styles.profileMenuButtonText}>Terms & Conditions</Text>
+          </Pressable>
+          <Pressable onPress={onOpenContact} style={styles.profileMenuButton}>
+            <Text style={styles.profileMenuButtonText}>Contact School</Text>
+          </Pressable>
+        </View>
+      </View>
+
       <Pressable onPress={onLogout} style={[styles.logoutButton, styles.profileLogoutButton]}>
         <Text style={styles.logoutText}>Logout</Text>
       </Pressable>
@@ -943,7 +1101,87 @@ function StudentProfilePage({ student, onBack, onLogout }) {
   );
 }
 
-function Dashboard({ session, onLogout }) {
+function LegalScreen({ type, onBack }) {
+  const isPrivacy = type === "privacy";
+  const isTerms = type === "terms";
+  const title = isPrivacy ? "Privacy Policy" : isTerms ? "Terms & Conditions" : "Contact School";
+  const points = isPrivacy ? privacyPolicyPoints : isTerms ? termsPoints : [];
+
+  const openContact = (target) => {
+    Linking.openURL(target).catch(() => {
+      Alert.alert("Unable to open link", target);
+    });
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.legalShell}>
+      <View style={styles.legalCard}>
+        <View style={styles.legalHeaderRow}>
+          <Pressable onPress={onBack} style={styles.legalBackButton}>
+            <Text style={styles.legalBackButtonText}>Back</Text>
+          </Pressable>
+          <View style={styles.legalHeaderText}>
+            <Text style={styles.legalKicker}>School ERP</Text>
+            <Text style={styles.legalTitle}>{title}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.legalIntro}>
+          {isPrivacy
+            ? "This policy explains the basic information collected by the school app, why it is needed and how families can contact the school."
+            : isTerms
+              ? "These simple terms explain how the app should be used by teachers, students and parents."
+              : "Use the contact details below for data correction, deletion requests or general privacy support."}
+        </Text>
+
+        {points.length ? (
+          <View style={styles.legalPoints}>
+            {points.map((point) => (
+              <View key={point} style={styles.legalPointRow}>
+                <Text style={styles.legalPointBullet}>•</Text>
+                <Text style={styles.legalPointText}>{point}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.legalContactCard}>
+          <Text style={styles.legalSectionTitle}>School Contact</Text>
+          <Text style={styles.legalContactText}>School Name: {SCHOOL_NAME}</Text>
+          <Text style={styles.legalContactText}>Email: {SCHOOL_EMAIL}</Text>
+          <Text style={styles.legalContactText}>Phone: {SCHOOL_PHONE}</Text>
+          <Text style={styles.legalContactText}>Address: {SCHOOL_ADDRESS}</Text>
+          <Text style={styles.legalContactText}>Office Hours: {SCHOOL_SUPPORT_HOURS}</Text>
+        </View>
+
+        {type === "contact" ? (
+          <View style={styles.legalButtonRow}>
+            <Pressable onPress={() => openContact(`tel:${SCHOOL_PHONE.replace(/\s/g, "")}`)} style={styles.legalActionButton}>
+              <Text style={styles.legalActionButtonText}>Call</Text>
+            </Pressable>
+            <Pressable onPress={() => openContact(`mailto:${SCHOOL_EMAIL}`)} style={styles.legalActionButton}>
+              <Text style={styles.legalActionButtonText}>Email</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => openContact(`https://maps.google.com/?q=${encodeURIComponent(SCHOOL_ADDRESS)}`)}
+              style={styles.legalActionButton}
+            >
+              <Text style={styles.legalActionButtonText}>Map</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.legalFooterCard}>
+          <Text style={styles.legalFooterText}>
+            The school may update these pages from time to time. Please check them again after app updates.
+          </Text>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+function Dashboard({ session, onLogout, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   const [activeTab, setActiveTab] = useState("home");
   const [studentProfile, setStudentProfile] = useState(session.user || null);
   const tabSections = session.role === "teacher" ? teacherTabSections : studentTabSections;
@@ -1029,9 +1267,11 @@ function Dashboard({ session, onLogout }) {
               accessibilityLabel="Open student profile"
             >
               <View style={styles.profileAvatar}>
-                <Text style={styles.profileAvatarText}>
-                  {getInitials(getStudentDisplayName(studentProfile || session.user))}
-                </Text>
+                <Image
+                  source={getProfilePhotoSource(studentProfile || session.user)}
+                  style={styles.profileAvatarImage}
+                  resizeMode="cover"
+                />
               </View>
             </Pressable>
           )}
@@ -1053,6 +1293,9 @@ function Dashboard({ session, onLogout }) {
           session={session}
           onStudentLoaded={setStudentProfile}
           onLogout={onLogout}
+          onOpenPrivacy={onOpenPrivacy}
+          onOpenTerms={onOpenTerms}
+          onOpenContact={onOpenContact}
         />
       )}
 
@@ -1292,7 +1535,17 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
   );
 }
 
-function StudentArea({ activeTab, onTabChange, sectionTabs, session, onStudentLoaded, onLogout }) {
+function StudentArea({
+  activeTab,
+  onTabChange,
+  sectionTabs,
+  session,
+  onStudentLoaded,
+  onLogout,
+  onOpenPrivacy,
+  onOpenTerms,
+  onOpenContact,
+}) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1349,7 +1602,14 @@ function StudentArea({ activeTab, onTabChange, sectionTabs, session, onStudentLo
         }
       >
         {error ? <Notice tone="error" text={error} /> : null}
-        <StudentProfilePage student={student} onBack={() => onTabChange("home")} onLogout={onLogout} />
+        <StudentProfilePage
+          student={student}
+          onBack={() => onTabChange("home")}
+          onLogout={onLogout}
+          onOpenPrivacy={onOpenPrivacy}
+          onOpenTerms={onOpenTerms}
+          onOpenContact={onOpenContact}
+        />
       </ScrollView>
     );
   }
@@ -2845,6 +3105,8 @@ function StudentHistoryPanel({ session, students }) {
 function HolidayCalendarPanel({ session }) {
   const isStudent = session.role === "student";
   const monthOptions = useMemo(() => buildRecentMonthOptions(12), []);
+  const { width } = useWindowDimensions();
+  const isCompact = width < 520;
   const [month, setMonth] = useState(monthIso());
   const [monthOpen, setMonthOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("holidays");
@@ -2920,43 +3182,57 @@ function HolidayCalendarPanel({ session }) {
     }
   };
 
-  return (
-    <View>
-      <Text style={styles.sectionTitle}>{activeTab === "leaveRequests" && !isStudent ? "Leave Requests" : "Holiday Calendar"}</Text>
+  const panelTitle = activeTab === "leaveRequests" && !isStudent ? "Leave Requests" : "Holiday Calendar";
+  const panelInfoTitle =
+    activeTab === "leaveRequests" && !isStudent
+      ? "Pending leave requests are ready for review."
+      : "Holidays are managed by the school admin.";
+  const panelInfoSubtext =
+    activeTab === "leaveRequests" && !isStudent
+      ? "Month filter se selected month ke requests dikhenge."
+      : "Fridays are automatically marked as weekly off.";
 
-      <View style={styles.holidayToolbar}>
-        <View style={styles.holidayMonthField}>
-          <Text style={styles.inputLabel}>Month</Text>
-          <View style={styles.dropdownWrap}>
-            <Pressable
-              onPress={() => setMonthOpen((prev) => !prev)}
-              style={[styles.input, styles.dropdownButton, monthOpen && styles.dropdownButtonActive]}
-            >
-              <Text style={styles.dropdownButtonText}>{monthLabel}</Text>
-              <Text style={styles.dropdownChevron}>{monthOpen ? "^" : "v"}</Text>
-            </Pressable>
-            {monthOpen ? (
-              <View style={[styles.dropdownMenu, styles.dropdownMenuScrollable, styles.holidayMonthMenu]}>
-                {monthOptions.map((option) => {
-                  const active = month === option.value;
-                  return (
-                    <Pressable
-                      key={option.value}
-                      onPress={() => {
-                        setMonth(option.value);
-                        setMonthOpen(false);
-                      }}
-                      style={[styles.dropdownItem, active && styles.dropdownItemActive]}
-                    >
-                      <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option.label}</Text>
-                      <Text style={[styles.dropdownItemMeta, active && styles.dropdownItemMetaActive]}>{option.value}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ) : null}
-          </View>
+  return (
+    <View style={styles.holidayScreen}>
+      <View style={styles.holidayHeroCard}>
+        <View style={styles.holidayHeroText}>
+          <Text style={styles.holidayHeroEyebrow}>SCHOOL CALENDAR</Text>
+          <Text style={[styles.holidayHeroTitle, isCompact && styles.holidayHeroTitleCompact]}>{panelTitle}</Text>
         </View>
+        <View style={styles.holidayHeroArtWrap}>
+          <Image source={bookIllustration} style={styles.holidayHeroArt} resizeMode="contain" />
+        </View>
+      </View>
+
+      <View style={styles.holidayControlCard}>
+        <Text style={styles.holidayFieldLabel}>MONTH</Text>
+        <Pressable
+          onPress={() => setMonthOpen((prev) => !prev)}
+          style={[styles.holidayMonthButton, monthOpen && styles.holidayMonthButtonActive]}
+        >
+          <Text style={[styles.holidayMonthButtonText, isCompact && styles.holidayMonthButtonTextCompact]}>{monthLabel}</Text>
+          <Feather name={monthOpen ? "chevron-up" : "chevron-down"} size={22} color="#5f6f86" />
+        </Pressable>
+        {monthOpen ? (
+          <View style={[styles.dropdownMenu, styles.dropdownMenuScrollable, styles.holidayMonthMenu]}>
+            {monthOptions.map((option) => {
+              const active = month === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => {
+                    setMonth(option.value);
+                    setMonthOpen(false);
+                  }}
+                  style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                >
+                  <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option.label}</Text>
+                  <Text style={[styles.dropdownItemMeta, active && styles.dropdownItemMetaActive]}>{option.value}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         {!isStudent ? (
           <View style={styles.holidayTabSwitch}>
@@ -2964,25 +3240,47 @@ function HolidayCalendarPanel({ session }) {
               onPress={() => setActiveTab("holidays")}
               style={[styles.holidayTabButton, activeTab === "holidays" && styles.holidayTabButtonActive]}
             >
-              <Text style={[styles.holidayTabButtonText, activeTab === "holidays" && styles.holidayTabButtonTextActive]}>Holidays</Text>
+              <View style={styles.holidayTabButtonContent}>
+                <View style={[styles.holidayTabIconWrap, activeTab === "holidays" && styles.holidayTabIconWrapActive]}>
+                  <Feather name="calendar" size={16} color={activeTab === "holidays" ? "#fff" : "#64748b"} />
+                </View>
+                <Text style={[styles.holidayTabButtonText, activeTab === "holidays" && styles.holidayTabButtonTextActive]}>
+                  Holidays
+                </Text>
+              </View>
             </Pressable>
             <Pressable
               onPress={() => setActiveTab("leaveRequests")}
               style={[styles.holidayTabButton, activeTab === "leaveRequests" && styles.holidayTabButtonActive]}
             >
-              <Text style={[styles.holidayTabButtonText, activeTab === "leaveRequests" && styles.holidayTabButtonTextActive]}>
-                Leave Requests
-              </Text>
+              <View style={styles.holidayTabButtonContent}>
+                <View style={[styles.holidayTabIconWrap, activeTab === "leaveRequests" && styles.holidayTabIconWrapActive]}>
+                  <Feather name="file-text" size={16} color={activeTab === "leaveRequests" ? "#fff" : "#64748b"} />
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.holidayTabButtonText, activeTab === "leaveRequests" && styles.holidayTabButtonTextActive]}
+                >
+                  Leave Requests
+                </Text>
+              </View>
             </Pressable>
           </View>
         ) : null}
       </View>
 
-      {activeTab === "leaveRequests" && !isStudent ? (
-        <Notice tone="info" text="Pending leave requests ko yahin se approve ya reject karein. Month filter se selected month ke requests dikhेंगे." />
-      ) : (
-        <Notice tone="info" text="Holidays are managed by the school admin. Fridays are automatically marked as weekly off." />
-      )}
+      <View style={styles.holidayInfoCard}>
+        <View style={styles.holidayInfoIconWrap}>
+          <Feather name="info" size={18} color="#1458bf" />
+        </View>
+        <View style={styles.holidayInfoBody}>
+          <Text style={styles.holidayInfoTitle}>{panelInfoTitle}</Text>
+          <Text style={styles.holidayInfoSubtext}>{panelInfoSubtext}</Text>
+        </View>
+        <View style={styles.holidayInfoArtWrap}>
+          <Feather name="bell" size={22} color="#9cc5ff" />
+        </View>
+      </View>
 
       {error ? <Notice tone="error" text={error} /> : null}
       {loading ? <LoadingBlock label={activeTab === "leaveRequests" && !isStudent ? "Leave requests loading..." : "Holidays loading..."} /> : null}
@@ -3001,7 +3299,7 @@ function HolidayCalendarPanel({ session }) {
 
               return (
                 <View key={request.id} style={styles.leaveReviewCard}>
-                  <View style={styles.leaveReviewHeader}>
+                  <View style={[styles.leaveReviewHeader, isCompact && styles.leaveReviewHeaderStacked]}>
                     <View style={styles.rowBody}>
                       <Text style={styles.rowTitle}>{student.name || `Roll ${request.roll_no || "-"}`}</Text>
                       <Text style={styles.rowMeta}>
@@ -3015,18 +3313,28 @@ function HolidayCalendarPanel({ session }) {
                   </View>
 
                   {isPending ? (
-                    <View style={styles.leaveReviewActions}>
+                    <View style={[styles.leaveReviewActions, isCompact && styles.leaveReviewActionsStacked]}>
                       <Pressable
                         disabled={savingId === request.id}
                         onPress={() => reviewLeaveRequest(request.id, "approved")}
-                        style={[styles.leaveReviewButton, styles.leaveReviewApprove, savingId === request.id && styles.disabledButton]}
+                        style={[
+                          styles.leaveReviewButton,
+                          isCompact && styles.leaveReviewButtonStacked,
+                          styles.leaveReviewApprove,
+                          savingId === request.id && styles.disabledButton,
+                        ]}
                       >
                         <Text style={styles.leaveReviewButtonText}>Approve</Text>
                       </Pressable>
                       <Pressable
                         disabled={savingId === request.id}
                         onPress={() => reviewLeaveRequest(request.id, "rejected")}
-                        style={[styles.leaveReviewButton, styles.leaveReviewReject, savingId === request.id && styles.disabledButton]}
+                        style={[
+                          styles.leaveReviewButton,
+                          isCompact && styles.leaveReviewButtonStacked,
+                          styles.leaveReviewReject,
+                          savingId === request.id && styles.disabledButton,
+                        ]}
                       >
                         <Text style={styles.leaveReviewButtonText}>Reject</Text>
                       </Pressable>
@@ -3048,20 +3356,34 @@ function HolidayCalendarPanel({ session }) {
       {!loading && (activeTab === "holidays" || isStudent) ? (
         holidays.length ? (
           <View style={styles.list}>
-            {holidays.map((holiday) => {
+            {holidays.map((holiday, index) => {
               const startDate = holiday.start_date || holiday.holiday_date;
               const endDate = holiday.end_date || holiday.holiday_date;
               const dateText =
                 startDate === endDate ? formatDisplayDate(startDate) : `${formatDisplayDate(startDate)} to ${formatDisplayDate(endDate)}`;
+              const badgeParts = getHolidayBadgeParts(startDate);
+              const decorIcon = getHolidayDecorIcon(index, holiday.type);
+              const chipText = holiday.type === "weekly" ? "Friday" : "Admin";
               return (
-                <View key={holiday.id || `${startDate}-${holiday.title}`} style={styles.holidayCard}>
-                  <View style={styles.rowBody}>
-                    <Text style={styles.rowTitle}>{holiday.title || "Holiday"}</Text>
-                    <Text style={styles.rowMeta}>{dateText}</Text>
-                    {holiday.description ? <Text style={styles.rowSub}>{holiday.description}</Text> : null}
+                <View key={holiday.id || `${startDate}-${holiday.title}`} style={styles.holidayItemCard}>
+                  <View style={styles.holidayDateBadge}>
+                    <Text style={styles.holidayDateWeekday}>{badgeParts.weekday}</Text>
+                    <Text style={styles.holidayDateDay}>{badgeParts.day}</Text>
+                    <Text style={styles.holidayDateMonth}>{badgeParts.month}</Text>
                   </View>
-                  <View style={styles.holidayTypePill}>
-                    <Text style={styles.holidayTypeText}>{holiday.type === "weekly" ? "Friday" : "Admin"}</Text>
+                  <View style={styles.holidayItemDivider} />
+                  <View style={styles.holidayItemBody}>
+                    <Text style={styles.holidayItemTitle}>{holiday.title || "Holiday"}</Text>
+                    <Text style={styles.holidayItemDate}>{dateText}</Text>
+                    <Text style={styles.holidayItemSub}>{holiday.description || "Weekly Friday holiday"}</Text>
+                  </View>
+                  <View style={styles.holidayItemMeta}>
+                    <View style={styles.holidayTypeChip}>
+                      <Text style={styles.holidayTypeText}>{chipText}</Text>
+                    </View>
+                    <View style={styles.holidayIconTile}>
+                      <Feather name={decorIcon} size={24} color="#1458bf" />
+                    </View>
                   </View>
                 </View>
               );
@@ -3349,6 +3671,30 @@ const getMetricIconColor = (tone = "") =>
 const getNoticeIconName = (tone = "info") =>
   tone === "error" ? "alert-circle" : tone === "success" ? "check-circle" : "info";
 
+const HOLIDAY_DECOR_ICONS = ["umbrella", "sun", "glasses", "camera"];
+
+const getHolidayBadgeParts = (dateValue) => {
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return { weekday: "--", day: "--", month: "---" };
+  }
+
+  return {
+    weekday: parsed
+      .toLocaleDateString("en-US", { weekday: "short" })
+      .toUpperCase(),
+    day: parsed.toLocaleDateString("en-US", { day: "2-digit" }),
+    month: parsed
+      .toLocaleDateString("en-US", { month: "short" })
+      .toUpperCase(),
+  };
+};
+
+const getHolidayDecorIcon = (index = 0, type = "") =>
+  String(type || "").toLowerCase() === "weekly"
+    ? HOLIDAY_DECOR_ICONS[index % HOLIDAY_DECOR_ICONS.length]
+    : "calendar";
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -3545,7 +3891,7 @@ const styles = StyleSheet.create({
   },
   dropdownWrap: {
     position: "relative",
-    zIndex: 10,
+    zIndex: 30,
   },
   dropdownButton: {
     alignItems: "center",
@@ -3903,13 +4249,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 2,
     height: 42,
+    overflow: "hidden",
     justifyContent: "center",
     width: 42,
   },
-  profileAvatarText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "900",
+  profileAvatarImage: {
+    height: "100%",
+    width: "100%",
   },
   roleBadge: {
     backgroundColor: "#fff8e8",
@@ -3997,13 +4343,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f5f63",
     borderRadius: 20,
     height: 68,
+    overflow: "hidden",
     justifyContent: "center",
     width: 68,
   },
-  profileHeroAvatarText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "900",
+  profileHeroAvatarImage: {
+    height: "100%",
+    width: "100%",
   },
   profileHeroText: {
     flex: 1,
@@ -4159,6 +4505,179 @@ const styles = StyleSheet.create({
   profileLogoutButton: {
     alignItems: "center",
     marginTop: 10,
+  },
+  profileMenuCard: {
+    backgroundColor: "#fff",
+    borderColor: "#dbe3eb",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12,
+  },
+  profileMenuTitle: {
+    color: "#0f5f63",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    textTransform: "uppercase",
+  },
+  profileMenuGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  profileMenuButton: {
+    alignItems: "center",
+    backgroundColor: "#eef5ff",
+    borderColor: "#d8e6fb",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexGrow: 1,
+    minWidth: "30%",
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  profileMenuButtonText: {
+    color: "#174ea6",
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  legalShell: {
+    backgroundColor: "#eef4fb",
+    flexGrow: 1,
+    padding: 16,
+  },
+  legalCard: {
+    backgroundColor: "#fff",
+    borderColor: "#d8e3ef",
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 16,
+  },
+  legalHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  legalBackButton: {
+    alignItems: "center",
+    backgroundColor: "#0f5f63",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  legalBackButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  legalHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  legalKicker: {
+    color: "#9a6c1c",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  legalTitle: {
+    color: "#152238",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  legalIntro: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginTop: 14,
+  },
+  legalPoints: {
+    gap: 10,
+    marginTop: 14,
+  },
+  legalPointRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  legalPointBullet: {
+    color: "#0f5f63",
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 20,
+    width: 14,
+  },
+  legalPointText: {
+    color: "#1f2937",
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  legalContactCard: {
+    backgroundColor: "#f7fbff",
+    borderColor: "#dce8f4",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 16,
+    padding: 14,
+  },
+  legalSectionTitle: {
+    color: "#0f5f63",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  legalContactText: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  legalButtonRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 14,
+  },
+  legalActionButton: {
+    alignItems: "center",
+    backgroundColor: "#eef5ff",
+    borderColor: "#d7e4f6",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexGrow: 1,
+    minWidth: "30%",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  legalActionButtonText: {
+    color: "#174ea6",
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  legalFooterCard: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e5ebf2",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 14,
+    padding: 12,
+  },
+  legalFooterText: {
+    color: "#5b6572",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
   },
   content: {
     padding: 16,
@@ -4539,6 +5058,265 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
   },
+  holidayScreen: {
+    gap: 14,
+  },
+  holidayHeroCard: {
+    alignItems: "center",
+    backgroundColor: "#f6f9ff",
+    borderColor: "#dbe5f2",
+    borderRadius: 28,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 14,
+    minHeight: 132,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+  },
+  holidayHeroText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  holidayHeroEyebrow: {
+    color: "#6b7a91",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  holidayHeroTitle: {
+    color: "#15294f",
+    fontSize: 33,
+    fontWeight: "900",
+    lineHeight: 40,
+  },
+  holidayHeroTitleCompact: {
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  holidayHeroArtWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.86)",
+    borderRadius: 24,
+    justifyContent: "center",
+    minHeight: 96,
+    minWidth: 96,
+    padding: 10,
+  },
+  holidayHeroArt: {
+    height: 82,
+    width: 82,
+  },
+  holidayControlCard: {
+    backgroundColor: "#fff",
+    borderColor: "#dbe5f2",
+    borderRadius: 34,
+    borderWidth: 1,
+    gap: 12,
+    padding: 18,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+  },
+  holidayFieldLabel: {
+    color: "#6b7a91",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.7,
+    textTransform: "uppercase",
+  },
+  holidayMonthButton: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#d6e0ef",
+    borderRadius: 24,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 64,
+    paddingHorizontal: 18,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+  },
+  holidayMonthButtonActive: {
+    borderColor: "#bcd0f4",
+  },
+  holidayMonthButtonText: {
+    color: "#15294f",
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "900",
+    paddingRight: 12,
+  },
+  holidayMonthButtonTextCompact: {
+    fontSize: 17,
+  },
+  holidayTabButtonContent: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+  },
+  holidayTabIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#eef4ff",
+    borderRadius: 12,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
+  holidayTabIconWrapActive: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  holidayInfoCard: {
+    alignItems: "center",
+    backgroundColor: "#f7fbff",
+    borderColor: "#cfe0f7",
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 14,
+    minHeight: 86,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.03,
+    shadowRadius: 14,
+  },
+  holidayInfoIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#ddebff",
+    borderRadius: 999,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  holidayInfoBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  holidayInfoTitle: {
+    color: "#1f2f4d",
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 21,
+  },
+  holidayInfoSubtext: {
+    color: "#52606d",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  holidayInfoArtWrap: {
+    alignItems: "center",
+    backgroundColor: "#eef4ff",
+    borderRadius: 999,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  holidayItemCard: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#dbe4f3",
+    borderRadius: 28,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 14,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+  },
+  holidayDateBadge: {
+    alignItems: "center",
+    backgroundColor: "#f3f7fd",
+    borderRadius: 20,
+    justifyContent: "center",
+    minHeight: 112,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    width: 86,
+  },
+  holidayDateWeekday: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+  },
+  holidayDateDay: {
+    color: "#15294f",
+    fontSize: 34,
+    fontWeight: "900",
+    lineHeight: 38,
+    marginTop: 2,
+  },
+  holidayDateMonth: {
+    color: "#6b7a91",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+    marginTop: 1,
+  },
+  holidayItemDivider: {
+    alignSelf: "stretch",
+    backgroundColor: "#dbe5f2",
+    borderRadius: 999,
+    width: 1,
+  },
+  holidayItemBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  holidayItemTitle: {
+    color: "#15294f",
+    fontSize: 19,
+    fontWeight: "900",
+    lineHeight: 24,
+  },
+  holidayItemDate: {
+    color: "#1458bf",
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  holidayItemSub: {
+    color: "#667085",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  holidayItemMeta: {
+    alignItems: "center",
+    gap: 10,
+    justifyContent: "center",
+  },
+  holidayTypeChip: {
+    backgroundColor: "#eef4ff",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  holidayIconTile: {
+    alignItems: "center",
+    backgroundColor: "#eff4ff",
+    borderRadius: 22,
+    height: 60,
+    justifyContent: "center",
+    width: 60,
+  },
   holidayCard: {
     alignItems: "center",
     backgroundColor: "#fff",
@@ -4582,40 +5360,68 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 10,
   },
+  holidayToolbarStacked: {
+    flexDirection: "column",
+  },
   holidayMonthField: {
     flex: 1,
+  },
+  holidayMonthFieldStacked: {
+    width: "100%",
+  },
+  holidayMonthFieldOpen: {
+    paddingBottom: 0,
   },
   holidayTabSwitch: {
     flexDirection: "row",
     gap: 8,
     flex: 1,
   },
+  holidayTabSwitchStacked: {
+    flexDirection: "row",
+    width: "100%",
+  },
   holidayTabButton: {
     alignItems: "center",
     backgroundColor: "#f3f4f6",
     borderColor: "#dbe4f0",
-    borderRadius: 999,
+    borderRadius: 20,
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 44,
+    minHeight: 56,
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 12,
+  },
+  holidayTabButtonCompact: {
+    borderRadius: 16,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   holidayTabButtonActive: {
     backgroundColor: "#1458bf",
     borderColor: "#1458bf",
+    shadowColor: "#1458bf",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 3,
   },
   holidayTabButtonText: {
     color: "#52606d",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "900",
+  },
+  holidayTabButtonTextCompact: {
+    fontSize: 11,
+    letterSpacing: 0.1,
   },
   holidayTabButtonTextActive: {
     color: "#fff",
   },
   holidayMonthMenu: {
-    marginTop: 8,
+    marginTop: 10,
   },
   leaveReviewCard: {
     backgroundColor: "#fff",
@@ -4635,9 +5441,15 @@ const styles = StyleSheet.create({
     gap: 10,
     justifyContent: "space-between",
   },
+  leaveReviewHeaderStacked: {
+    flexDirection: "column",
+  },
   leaveReviewActions: {
     flexDirection: "row",
     gap: 10,
+  },
+  leaveReviewActionsStacked: {
+    flexDirection: "column",
   },
   leaveReviewButton: {
     alignItems: "center",
@@ -4647,6 +5459,10 @@ const styles = StyleSheet.create({
     minHeight: 42,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  leaveReviewButtonStacked: {
+    flex: 0,
+    width: "100%",
   },
   leaveReviewApprove: {
     backgroundColor: "#0f766e",
@@ -5338,16 +6154,20 @@ const styles = StyleSheet.create({
   },
   portalCheckBox: {
     alignItems: "center",
-    backgroundColor: "#073b82",
-    borderColor: "#073b82",
+    backgroundColor: "#fff",
+    borderColor: "#b8c6d8",
     borderRadius: 5,
     borderWidth: 1,
     height: 18,
     justifyContent: "center",
     width: 18,
   },
+  portalCheckBoxActive: {
+    backgroundColor: "#073b82",
+    borderColor: "#073b82",
+  },
   portalCheckText: {
-    color: "#fff",
+    color: "transparent",
     fontSize: 11,
     fontWeight: "900",
     lineHeight: 11,
@@ -5361,6 +6181,63 @@ const styles = StyleSheet.create({
     color: "#1458bf",
     fontSize: 12,
     fontWeight: "800",
+  },
+  portalConsentRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  portalConsentBox: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#b8c6d8",
+    borderRadius: 6,
+    borderWidth: 1.5,
+    height: 20,
+    justifyContent: "center",
+    width: 20,
+  },
+  portalConsentBoxActive: {
+    backgroundColor: "#073b82",
+    borderColor: "#073b82",
+  },
+  portalConsentCheck: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 11,
+  },
+  portalConsentText: {
+    color: "#304255",
+    flex: 1,
+    flexWrap: "wrap",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+  },
+  portalLegalLinksRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  portalLegalLinkButton: {
+    backgroundColor: "#edf3fb",
+    borderColor: "#d8e4f3",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexGrow: 1,
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  portalLegalLinkText: {
+    color: "#124a9f",
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
   },
   portalLoginButton: {
     alignItems: "center",
@@ -5793,16 +6670,20 @@ const styles = StyleSheet.create({
   },
   portalCheckBox: {
     alignItems: "center",
-    backgroundColor: "#073b82",
-    borderColor: "#073b82",
+    backgroundColor: "#fff",
+    borderColor: "#b8c6d8",
     borderRadius: 4,
     borderWidth: 1,
     height: 13,
     justifyContent: "center",
     width: 13,
   },
+  portalCheckBoxActive: {
+    backgroundColor: "#073b82",
+    borderColor: "#073b82",
+  },
   portalCheckText: {
-    color: "#fff",
+    color: "transparent",
     fontSize: 8,
     fontWeight: "900",
     lineHeight: 8,
@@ -6348,3 +7229,4 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 });
+
