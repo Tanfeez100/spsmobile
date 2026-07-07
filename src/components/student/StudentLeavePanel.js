@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { formatDisplayDate } from "../../utils/date";
 import { getStudentLeaves, submitStudentLeave } from "../../api/client";
 
@@ -95,7 +96,10 @@ export default function StudentLeavePanel({ session }) {
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>Leave Apply</Text>
+      <View style={styles.sectionTitleRow}>
+        <Feather name="file-plus" size={18} color="#1458bf" />
+        <Text style={styles.sectionTitle}>Leave Apply</Text>
+      </View>
       <View style={styles.card}>
         <Text style={styles.label}>Leave Type</Text>
         <Pressable
@@ -146,7 +150,14 @@ export default function StudentLeavePanel({ session }) {
         />
 
         <Pressable disabled={saving} onPress={submit} style={[styles.submitButton, saving && styles.submitButtonDisabled]}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Submit Leave</Text>}
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <View style={styles.buttonRow}>
+              <Feather name="send" size={18} color="#fff" />
+              <Text style={styles.submitText}>Submit Leave</Text>
+            </View>
+          )}
         </Pressable>
       </View>
 
@@ -155,7 +166,10 @@ export default function StudentLeavePanel({ session }) {
 
       {!loading && requests.length ? (
         <View style={styles.list}>
-          <Text style={styles.sectionTitle}>My Requests</Text>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="clock" size={18} color="#1458bf" />
+            <Text style={styles.sectionTitle}>My Requests</Text>
+          </View>
           {requests.map((request) => (
             <View key={request.id} style={styles.requestCard}>
               <View style={styles.requestHead}>
@@ -184,7 +198,10 @@ export default function StudentLeavePanel({ session }) {
 function Notice({ tone, text }) {
   return (
     <View style={[styles.notice, tone === "error" ? styles.noticeError : styles.noticeInfo]}>
-      <Text style={styles.noticeText}>{text}</Text>
+      <View style={styles.noticeRow}>
+        <Feather name={tone === "error" ? "alert-circle" : "info"} size={18} color={tone === "error" ? "#9f2f21" : "#1458bf"} />
+        <Text style={styles.noticeText}>{text}</Text>
+      </View>
     </View>
   );
 }
@@ -218,39 +235,51 @@ function StatusPill({ status }) {
 
 const styles = StyleSheet.create({
   sectionTitle: {
-    color: "#17202a",
-    fontSize: 18,
+    color: "#0b2f63",
+    fontSize: 22,
     fontWeight: "900",
-    marginBottom: 10,
+    marginBottom: 12,
+  },
+  sectionTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
   },
   card: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 24,
     borderWidth: 1,
     marginBottom: 12,
-    padding: 12,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
   },
   label: {
-    color: "#52606d",
-    fontSize: 12,
+    color: "#0d2f68",
+    fontSize: 11,
     fontWeight: "900",
-    marginBottom: 6,
+    letterSpacing: 0.3,
+    marginBottom: 7,
     textTransform: "uppercase",
   },
   input: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#dbe4f0",
-    borderRadius: 12,
+    backgroundColor: "#fff",
+    borderColor: "#dde6f2",
+    borderRadius: 16,
     borderWidth: 1,
     color: "#17202a",
     fontSize: 14,
     fontWeight: "800",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    minHeight: 52,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   textArea: {
-    minHeight: 92,
+    minHeight: 96,
     textAlignVertical: "top",
   },
   grid: {
@@ -263,17 +292,18 @@ const styles = StyleSheet.create({
   },
   selectButton: {
     alignItems: "center",
-    backgroundColor: "#f8fafc",
-    borderColor: "#dbe4f0",
-    borderRadius: 12,
+    backgroundColor: "#fff",
+    borderColor: "#dde6f2",
+    borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
+    minHeight: 52,
+    paddingHorizontal: 14,
     paddingVertical: 12,
   },
   selectButtonActive: {
-    borderColor: "#1d4ed8",
+    borderColor: "#1458bf",
   },
   selectText: {
     color: "#17202a",
@@ -281,24 +311,28 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   chevron: {
-    color: "#52606d",
+    color: "#6c7d97",
     fontSize: 13,
     fontWeight: "900",
   },
   menu: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 12,
+    borderColor: "#dde6f2",
+    borderRadius: 18,
     borderWidth: 1,
     marginTop: 8,
     overflow: "hidden",
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
   },
   menuItem: {
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   menuItemActive: {
-    backgroundColor: "#eef4ff",
+    backgroundColor: "#edf4ff",
   },
   menuItemText: {
     color: "#17202a",
@@ -306,15 +340,19 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   menuItemTextActive: {
-    color: "#1d4ed8",
+    color: "#1458bf",
   },
   submitButton: {
     alignItems: "center",
-    backgroundColor: "#126a6f",
-    borderRadius: 12,
-    minHeight: 46,
+    backgroundColor: "#1458bf",
+    borderRadius: 18,
+    minHeight: 56,
     justifyContent: "center",
     marginTop: 12,
+    shadowColor: "#1458bf",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
   },
   submitButtonDisabled: {
     opacity: 0.72,
@@ -324,15 +362,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
   },
+  buttonRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
   list: {
     gap: 10,
   },
   requestCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   requestHead: {
     flexDirection: "row",
@@ -381,28 +428,41 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
   notice: {
-    borderRadius: 10,
+    borderRadius: 18,
+    borderWidth: 1,
     marginBottom: 12,
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
   },
   noticeError: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: "#fff3f1",
+    borderColor: "#f4c2ba",
   },
   noticeInfo: {
-    backgroundColor: "#dbeafe",
+    backgroundColor: "#eef7ff",
+    borderColor: "#c9defa",
   },
   noticeText: {
-    color: "#17202a",
+    color: "#17305d",
     fontSize: 13,
     fontWeight: "800",
+  },
+  noticeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
   },
   emptyState: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 20,
+    padding: 24,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   emptyTitle: {
     color: "#17202a",
@@ -418,10 +478,14 @@ const styles = StyleSheet.create({
   },
   loadingBlock: {
     alignItems: "center",
-    paddingVertical: 16,
+    backgroundColor: "#fff",
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingVertical: 18,
   },
   loadingText: {
-    color: "#126a6f",
+    color: "#1458bf",
     fontSize: 12,
     fontWeight: "800",
     marginTop: 6,

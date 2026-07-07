@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { getStudentFeeDashboard } from "../../api/client";
 
 const currency = new Intl.NumberFormat("en-IN", {
@@ -35,6 +36,9 @@ export default function StudentFeeDashboardPanel({ session, student }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [year, setYear] = useState(getCurrentYear());
+  const [activeTab, setActiveTab] = useState("bill");
+  const [expandedBills, setExpandedBills] = useState({});
+  const [expandedPayments, setExpandedPayments] = useState({});
   const [yearOptions, setYearOptions] = useState([getCurrentYear()]);
   const [summary, setSummary] = useState(null);
   const [history, setHistory] = useState([]);
@@ -79,41 +83,62 @@ export default function StudentFeeDashboardPanel({ session, student }) {
       { label: "Total Billed", value: formatMoney(summary?.total_amount || 0), tone: "teal" },
       { label: "Total Paid", value: formatMoney(summary?.total_paid || 0), tone: "green" },
       { label: "Due", value: formatMoney(summary?.total_due || 0), tone: "red" },
-      { label: "Bills", value: summary?.months || 0, tone: "amber" },
+      { label: "Bills", value: summary?.months || history.length || 0, tone: "amber" },
     ],
-    [summary],
+    [summary, history.length],
   );
 
-  const derivedPaymentHistory = useMemo(() => {
-    const payments = (history || [])
-      .flatMap((bill) =>
-        (bill.payments || []).map((payment) => ({
-          id: payment.id || `${bill.bill_id}-${payment.payment_date || payment.created_at || "payment"}-${payment.transaction_id || payment.receipt_no || ""}`,
-          bill_id: bill.bill_id,
-          invoice_number: bill.invoice_number,
+  const billRows = useMemo(() => [...history].sort((a, b) => String(b.month || "").localeCompare(String(a.month || ""))), [history]);
+
+  const paidBillRows = useMemo(
+    () => billRows.filter((bill) => String(bill.bill_status || "").toLowerCase() === "paid"),
+    [billRows],
+  );
+
+  const paidPaymentRows = useMemo(
+    () =>
+      paidBillRows.map((bill) => {
+        const latestPayment = bill.latest_payment || null;
+        return {
+          id: bill.bill_id,
           month: bill.month,
-          payment_date: payment.payment_date || payment.created_at,
-          amount_paid: payment.amount_paid,
-          payment_mode: payment.payment_mode,
-          transaction_id: payment.transaction_id || null,
-          receipt_no: payment.receipt_no || null,
-        })),
-      )
-      .sort((a, b) => String(b.payment_date || "").localeCompare(String(a.payment_date || "")));
+          payment_date: latestPayment?.payment_date || bill.paid_at || bill.updated_at || bill.created_at,
+          payment_mode: latestPayment?.payment_mode || bill.payment_mode || bill.mode || "cash",
+          amount_paid: bill.paid_amount || bill.total_paid || bill.total_amount,
+          total_amount: bill.total_amount,
+          total_paid: bill.paid_amount || bill.total_paid || bill.total_amount,
+          remaining: bill.remaining,
+          bill_status: bill.bill_status || "paid",
+          invoice_number: bill.invoice_number,
+          receipt_no: latestPayment?.receipt_no || bill.receipt_no || null,
+          transaction_id: latestPayment?.transaction_id || bill.transaction_id || null,
+        };
+      }),
+    [paidBillRows],
+  );
 
-    return payments;
-  }, [history]);
+  const toggleBillExpanded = (billId) => {
+    setExpandedBills((prev) => ({
+      ...prev,
+      [billId]: !prev[billId],
+    }));
+  };
 
-  const visiblePaymentHistory = useMemo(() => {
-    const source = paymentHistory.length ? paymentHistory : derivedPaymentHistory;
-    return [...source].sort((a, b) => String(b.payment_date || "").localeCompare(String(a.payment_date || "")));
-  }, [paymentHistory, derivedPaymentHistory]);
+  const togglePaymentExpanded = (paymentId) => {
+    setExpandedPayments((prev) => ({
+      ...prev,
+      [paymentId]: !prev[paymentId],
+    }));
+  };
 
   return (
     <View style={styles.panel}>
       <View style={styles.headerRow}>
         <View style={styles.headerTextBlock}>
-          <Text style={styles.sectionTitle}>Fee Dashboard</Text>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="credit-card" size={18} color="#1458bf" />
+            <Text style={styles.sectionTitle}>Fee Dashboard</Text>
+          </View>
           <Text style={styles.sectionSubtitle}>
             {student?.name ? `${student.name} • ` : ""}
             Year-wise fee history
@@ -138,6 +163,23 @@ export default function StudentFeeDashboardPanel({ session, student }) {
         </ScrollView>
       </View>
 
+      <View style={styles.feeTabRow}>
+        <Pressable
+          onPress={() => setActiveTab("bill")}
+          style={[styles.feeTabButton, activeTab === "bill" && styles.feeTabButtonActive]}
+        >
+          <Text style={[styles.feeTabText, activeTab === "bill" && styles.feeTabTextActive]}>Bill</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setActiveTab("payment")}
+          style={[styles.feeTabButton, activeTab === "payment" && styles.feeTabButtonActive]}
+        >
+          <Text style={[styles.feeTabText, activeTab === "payment" && styles.feeTabTextActive]}>
+            Payment History
+          </Text>
+        </Pressable>
+      </View>
+
       {loading ? (
         <LoadingBlock label="Fee dashboard loading..." />
       ) : null}
@@ -152,106 +194,129 @@ export default function StudentFeeDashboardPanel({ session, student }) {
         </View>
       ) : null}
 
-      {!loading && visiblePaymentHistory.length ? (
+      {!loading && activeTab === "payment" && paidPaymentRows.length ? (
         <View style={styles.paymentHistoryBlock}>
-          <Text style={styles.paymentHistoryTitle}>Payment History</Text>
-          <Text style={styles.paymentHistorySubtitle}>Month-wise payment records</Text>
+          <View style={styles.sectionTitleRow}>
+            <Feather name="wallet" size={18} color="#1458bf" />
+            <Text style={styles.paymentHistoryTitle}>Payment History</Text>
+          </View>
+          <Text style={styles.paymentHistorySubtitle}>Sirf paid bills dikhaye gaye hain</Text>
           <View style={styles.paymentHistoryList}>
-            {visiblePaymentHistory.map((payment) => (
+            {paidPaymentRows.map((payment) => (
               <View key={payment.id} style={styles.paymentHistoryCard}>
-                <View style={styles.paymentHistoryHeader}>
+                <Pressable onPress={() => togglePaymentExpanded(payment.id)} style={styles.expandCardHeader}>
                   <View style={styles.paymentHistoryBody}>
                     <Text style={styles.paymentHistoryMonth}>{formatMonth(payment.month)}</Text>
                     <Text style={styles.paymentHistoryMeta}>
                       {formatDate(payment.payment_date)} • {String(payment.payment_mode || "-").replace(/_/g, " ")}
                     </Text>
                   </View>
-                  <Text style={styles.paymentHistoryAmount}>{formatMoney(payment.amount_paid)}</Text>
-                </View>
+                  <View style={styles.expandHeaderRight}>
+                    <Text style={styles.paymentHistoryAmount}>{formatMoney(payment.amount_paid)}</Text>
+                    <Feather
+                      name={expandedPayments[payment.id] ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color="#1458bf"
+                    />
+                  </View>
+                </Pressable>
 
-                <View style={styles.paymentSummaryGrid}>
-                  <DetailPill label="Total" value={formatMoney(payment.total_amount)} />
-                  <DetailPill label="Paid" value={formatMoney(payment.total_paid)} />
-                  <DetailPill label="Remaining" value={formatMoney(payment.remaining)} />
-                  <DetailPill label="Status" value={String(payment.bill_status || "-").toUpperCase()} />
-                </View>
+                {!expandedPayments[payment.id] ? (
+                  <View style={styles.paymentCollapsedSummary}>
+                    <Text style={styles.paymentCollapsedText}>
+                      {payment.invoice_number || "Invoice"} • Tap to view full payment details
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.paymentSummaryGrid}>
+                      <DetailPill label="Total" value={formatMoney(payment.total_amount)} />
+                      <DetailPill label="Paid" value={formatMoney(payment.total_paid)} />
+                      <DetailPill label="Remaining" value={formatMoney(payment.remaining)} />
+                      <DetailPill label="Status" value={String(payment.bill_status || "-").toUpperCase()} />
+                    </View>
 
-                <View style={styles.paymentHistoryFooter}>
-                  <Text style={styles.paymentHistoryFootText}>{payment.invoice_number || "Invoice"}</Text>
-                  <Text style={styles.paymentHistoryFootText}>
-                    {payment.receipt_no
-                      ? `Receipt: ${payment.receipt_no}`
-                      : payment.transaction_id
-                      ? `Txn: ${payment.transaction_id}`
-                      : ""}
-                  </Text>
-                </View>
+                    <View style={styles.paymentHistoryFooter}>
+                      <Text style={styles.paymentHistoryFootText}>{payment.invoice_number || "Invoice"}</Text>
+                      <Text style={styles.paymentHistoryFootText}>
+                        {payment.receipt_no
+                          ? `Receipt: ${payment.receipt_no}`
+                          : payment.transaction_id
+                          ? `Txn: ${payment.transaction_id}`
+                          : ""}
+                      </Text>
+                    </View>
+                  </>
+                )}
               </View>
             ))}
           </View>
         </View>
       ) : null}
 
-      {!loading && history.length ? (
+      {!loading && activeTab === "bill" && billRows.length ? (
         <View style={styles.list}>
-          {history.map((bill) => {
-            const tone = statusTone[String(bill.bill_status || "unpaid").toLowerCase()] || statusTone.unpaid;
+          {billRows.map((bill) => {
             const detailItems = Array.isArray(bill.items) ? bill.items.slice(0, 3) : [];
 
             return (
               <View key={bill.bill_id} style={styles.card}>
-                <View style={styles.cardHeader}>
+                <Pressable onPress={() => toggleBillExpanded(bill.bill_id)} style={styles.expandCardHeader}>
                   <View style={styles.titleBlock}>
                     <Text style={styles.cardTitle}>{formatMonth(bill.month)}</Text>
                     <Text style={styles.cardMeta}>
-                      {bill.invoice_number} • {bill.payment_count || 0} payment{bill.payment_count === 1 ? "" : "s"}
+                      {bill.invoice_number || "Bill"} • Generated bill
                     </Text>
                   </View>
-                  <View style={[styles.statusPill, { backgroundColor: tone.backgroundColor }]}>
-                    <Text style={[styles.statusText, { color: tone.color }]}>
-                      {String(bill.bill_status || "unpaid").toUpperCase()}
+                  <View style={styles.expandHeaderRight}>
+                    <Text style={styles.expandHeaderLabel}>
+                      {bill.items_count || detailItems.length || 0} item{(bill.items_count || detailItems.length || 0) === 1 ? "" : "s"}
                     </Text>
+                    <Feather
+                      name={expandedBills[bill.bill_id] ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color="#1458bf"
+                    />
                   </View>
-                </View>
+                </Pressable>
 
-                <View style={styles.detailGrid}>
-                  <DetailPill label="Billed" value={formatMoney(bill.total_amount)} />
-                  <DetailPill label="Paid" value={formatMoney(bill.paid_amount)} />
-                  <DetailPill label="Due" value={formatMoney(bill.remaining)} />
-                  <DetailPill label="Advance" value={formatMoney(bill.advance_used)} />
-                </View>
-
-                {bill.latest_payment ? (
-                  <View style={styles.latestRow}>
-                    <Text style={styles.latestLabel}>Latest payment</Text>
-                    <Text style={styles.latestValue}>
-                      {formatDate(bill.latest_payment.payment_date)} • {formatMoney(bill.latest_payment.amount_paid)} •{" "}
-                      {String(bill.latest_payment.payment_mode || "-").replace(/_/g, " ")}
-                    </Text>
+                {!expandedBills[bill.bill_id] ? (
+                  <View style={styles.billCollapsedSummary}>
+                    <DetailPill label="Billed Amount" value={formatMoney(bill.total_amount)} />
+                    <DetailPill label="Due" value={formatMoney(bill.remaining)} />
                   </View>
-                ) : null}
+                ) : (
+                  <>
+                    <View style={styles.detailGrid}>
+                      <DetailPill label="Billed Amount" value={formatMoney(bill.total_amount)} />
+                      <DetailPill label="Due" value={formatMoney(bill.remaining)} />
+                      <DetailPill label="Items" value={bill.items_count || detailItems.length || 0} />
+                      <DetailPill label="Status" value="BILLED" />
+                    </View>
 
-                {detailItems.length ? (
-                  <View style={styles.itemsBlock}>
-                    <Text style={styles.itemsLabel}>Items</Text>
-                    {detailItems.map((item) => (
-                      <View key={`${bill.bill_id}-${item.fee_name}`} style={styles.itemRow}>
-                        <Text style={styles.itemName}>{item.fee_name}</Text>
-                        <Text style={styles.itemAmount}>{formatMoney(item.amount)}</Text>
+                    {detailItems.length ? (
+                      <View style={styles.itemsBlock}>
+                        <Text style={styles.itemsLabel}>Items</Text>
+                        {detailItems.map((item) => (
+                          <View key={`${bill.bill_id}-${item.fee_name}`} style={styles.itemRow}>
+                            <Text style={styles.itemName}>{item.fee_name}</Text>
+                            <Text style={styles.itemAmount}>{formatMoney(item.amount)}</Text>
+                          </View>
+                        ))}
+                        {bill.items_count > detailItems.length ? (
+                          <Text style={styles.moreText}>+{bill.items_count - detailItems.length} more items</Text>
+                        ) : null}
                       </View>
-                    ))}
-                    {bill.items_count > detailItems.length ? (
-                      <Text style={styles.moreText}>+{bill.items_count - detailItems.length} more items</Text>
                     ) : null}
-                  </View>
-                ) : null}
+                  </>
+                )}
               </View>
             );
           })}
         </View>
       ) : null}
 
-      {!loading && !history.length && !visiblePaymentHistory.length ? (
+      {!loading && !billRows.length && !paidPaymentRows.length ? (
         <EmptyState
           title="No fee history"
           text="Is year ke liye fee bills abhi available nahi hain."
@@ -262,10 +327,25 @@ export default function StudentFeeDashboardPanel({ session, student }) {
 }
 
 function MetricCard({ label, value, tone }) {
+  const iconName =
+    label === "Total Billed"
+      ? "file-text"
+      : label === "Total Paid"
+      ? "check-circle"
+      : label === "Due"
+      ? "alert-circle"
+      : "calendar";
+  const iconColor = tone === "green" ? "#16a34a" : tone === "red" ? "#ef4444" : tone === "amber" ? "#f59e0b" : "#1458bf";
+
   return (
     <View style={[styles.metricCard, styles[`metric_${tone}`]]}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
+      <View style={styles.metricIconWrap}>
+        <Feather name={iconName} size={18} color={iconColor} />
+      </View>
+      <View style={styles.metricBody}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -282,7 +362,10 @@ function DetailPill({ label, value }) {
 function Notice({ tone, text }) {
   return (
     <View style={[styles.notice, tone === "error" ? styles.noticeError : styles.noticeInfo]}>
-      <Text style={styles.noticeText}>{text}</Text>
+      <View style={styles.noticeRow}>
+        <Feather name={tone === "error" ? "alert-circle" : "info"} size={18} color={tone === "error" ? "#9f2f21" : "#1458bf"} />
+        <Text style={styles.noticeText}>{text}</Text>
+      </View>
     </View>
   );
 }
@@ -319,12 +402,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    color: "#17202a",
-    fontSize: 18,
+    color: "#0b2f63",
+    fontSize: 22,
     fontWeight: "900",
   },
+  sectionTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
   sectionSubtitle: {
-    color: "#667085",
+    color: "#6b7c95",
     fontSize: 12,
     fontWeight: "700",
     marginTop: 4,
@@ -338,15 +426,15 @@ const styles = StyleSheet.create({
   },
   yearChip: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
+    borderColor: "#dfe7f2",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 9,
   },
   yearChipActive: {
-    backgroundColor: "#0f5f63",
-    borderColor: "#0f5f63",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
   },
   yearChipText: {
     color: "#334155",
@@ -361,48 +449,109 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 10,
   },
-  metricCard: {
+  feeTabRow: {
+    backgroundColor: "#eef4fb",
+    borderColor: "#dbe6f2",
     borderRadius: 16,
-    minHeight: 88,
-    padding: 14,
-    width: "48%",
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+    padding: 4,
   },
-  metric_teal: {
-    backgroundColor: "#e0f2fe",
+  feeTabButton: {
+    alignItems: "center",
+    borderRadius: 12,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 40,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
-  metric_green: {
-    backgroundColor: "#dcfce7",
+  feeTabButtonActive: {
+    backgroundColor: "#1458bf",
   },
-  metric_red: {
-    backgroundColor: "#fee2e2",
-  },
-  metric_amber: {
-    backgroundColor: "#fef3c7",
-  },
-  metricLabel: {
-    color: "#334155",
+  feeTabText: {
+    color: "#56708d",
     fontSize: 12,
     fontWeight: "900",
+  },
+  feeTabTextActive: {
+    color: "#fff",
+  },
+  metricCard: {
+    alignItems: "center",
+    borderColor: "#edf2fa",
+    flexDirection: "row",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 12,
+    minHeight: 102,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    width: "48%",
+  },
+  metricIconWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.66)",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  metricBody: {
+    flex: 1,
+  },
+  metric_teal: {
+    backgroundColor: "#edf4ff",
+  },
+  metric_green: {
+    backgroundColor: "#ecfbf1",
+  },
+  metric_red: {
+    backgroundColor: "#fff1f0",
+  },
+  metric_amber: {
+    backgroundColor: "#fff7e5",
+  },
+  metricLabel: {
+    color: "#5f6f86",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.3,
     textTransform: "uppercase",
   },
   metricValue: {
-    color: "#0f172a",
-    fontSize: 22,
+    color: "#0b2f63",
+    fontSize: 21,
     fontWeight: "900",
-    marginTop: 8,
+    marginTop: 10,
   },
   list: {
     gap: 10,
   },
   card: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   cardHeader: {
     alignItems: "flex-start",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  expandCardHeader: {
+    alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 10,
@@ -430,6 +579,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
   },
+  expandHeaderRight: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  expandHeaderLabel: {
+    color: "#1458bf",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  billCollapsedSummary: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  paymentCollapsedSummary: {
+    backgroundColor: "#f8fbff",
+    borderColor: "#e3ebf5",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  paymentCollapsedText: {
+    color: "#667085",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
   detailGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -437,9 +617,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   detailPill: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
+    backgroundColor: "#f8fbff",
+    borderColor: "#e3ebf5",
+    borderRadius: 16,
     borderWidth: 1,
     minWidth: "47%",
     padding: 10,
@@ -457,9 +637,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   latestRow: {
-    backgroundColor: "#f8fafc",
-    borderColor: "#e2e8f0",
-    borderRadius: 12,
+    backgroundColor: "#f8fbff",
+    borderColor: "#e3ebf5",
+    borderRadius: 16,
     borderWidth: 1,
     marginTop: 12,
     padding: 10,
@@ -511,33 +691,43 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   notice: {
-    borderRadius: 12,
+    borderRadius: 18,
     marginBottom: 2,
-    padding: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   noticeError: {
-    backgroundColor: "#fef2f2",
-    borderColor: "#fecaca",
+    backgroundColor: "#fff3f1",
+    borderColor: "#f4c2ba",
     borderWidth: 1,
   },
   noticeInfo: {
-    backgroundColor: "#ecfeff",
-    borderColor: "#a5f3fc",
+    backgroundColor: "#eef7ff",
+    borderColor: "#c9defa",
     borderWidth: 1,
   },
   noticeText: {
-    color: "#0f172a",
+    color: "#17305d",
     fontSize: 12,
     fontWeight: "800",
+  },
+  noticeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
   },
   emptyState: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginTop: 4,
-    padding: 18,
+    padding: 22,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   emptyTitle: {
     color: "#17202a",
@@ -571,10 +761,14 @@ const styles = StyleSheet.create({
   },
   paymentHistoryCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   paymentHistoryHeader: {
     alignItems: "center",

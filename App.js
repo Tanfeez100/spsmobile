@@ -5,6 +5,7 @@ import {
   AppState,
   KeyboardAvoidingView,
   Image,
+  Linking,
   Platform,
   Pressable,
   RefreshControl,
@@ -14,8 +15,10 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
@@ -50,13 +53,52 @@ import StudentLeavePanel from "./src/components/student/StudentLeavePanel";
 import StudentFeeDashboardPanel from "./src/components/student/StudentFeeDashboardPanel";
 import StudentNotificationsPanel from "./src/components/student/StudentNotificationsPanel";
 import StudentResultsPanel from "./src/components/student/StudentResultsPanel";
-import { clearSession, loadSession, saveSession } from "./src/storage/session";
+import {
+  clearSavedLogin,
+  clearSession,
+  loadSavedLogin,
+  loadSession,
+  saveSavedLogin,
+  saveSession,
+} from "./src/storage/session";
 import { formatDisplayDate, getDefaultAcademicYear, monthIso, todayIso } from "./src/utils/date";
 
 const schoolLogo = require("./src/assets/logo.png");
+const schoolCelebration = require("./src/assets/celeb.jpeg");
+const iconStudents = require("./src/assets/studentsicon.png");
+const iconCheckout = require("./src/assets/checkouticon.png");
+const iconAttendance = require("./src/assets/icons8-attendance-50.png");
+const iconHome = require("./src/assets/icons8-home-50.png");
+const iconReportCard = require("./src/assets/icons8-report-card-50.png");
+const iconReports = require("./src/assets/icons8-reports-50.png");
+const iconHistory = require("./src/assets/icons8-history-50.png");
+const iconView = require("./src/assets/icons8-view-80.png");
+const bookIllustration = require("./src/assets/bookimage.png");
 const SCHOOL_NAME = "Star Public School";
 const SCHOOL_SHORT_NAME = "SPS";
 const SCHOOL_TAGLINE = "Learning, discipline and daily progress";
+const SCHOOL_PHONE = "+91 9006457330";
+const SCHOOL_EMAIL = "a9006457330@gmail.com";
+const SCHOOL_ADDRESS = "Meghwal mathia Bazar, West Champaran, Bihar 845106";
+const SCHOOL_SUPPORT_HOURS = "Monday to Saturday, 8:00 AM to 2:00 PM";
+
+const privacyPolicyPoints = [
+  "We collect only information required for admission, attendance, fees, examination, communication and school administration.",
+  "For teachers, GPS attendance is used only for daily check-in and check-out.",
+  "Student and teacher data is used to run the school ERP and to communicate important school updates.",
+  "Passwords, authentication tokens and school records are stored securely and accessed only by authorized staff.",
+  "Data is retained for as long as needed for school operations, statutory records and legitimate administrative purposes.",
+  "Users may request correction or deletion of information through the school office, subject to school and legal record requirements.",
+];
+
+const termsPoints = [
+  "The app is for school-related use only.",
+  "Users must keep their login details secure and must not share accounts with others.",
+  "The school owns the application content, records and configuration shown inside the app.",
+  "Users must not misuse the app, attempt unauthorized access, or interfere with school systems.",
+  "The school may suspend access if misuse, fraud or security risk is detected.",
+  "The app is provided to support school operations and the school is not liable for issues caused by misuse, device problems or network outages.",
+];
 
 const statusOptions = [
   { key: "present", label: "Present" },
@@ -115,6 +157,26 @@ Notifications.setNotificationHandler({
 });
 
 const getStudentDisplayName = (student) => student?.name || student?.full_name || "Student";
+
+const getProfilePhotoSource = (user) => {
+  const photoUrl =
+    user?.photo_url ||
+    user?.photoUrl ||
+    user?.profile_photo ||
+    user?.profilePhoto ||
+    user?.avatar_url ||
+    user?.avatarUrl ||
+    user?.image_url ||
+    user?.imageUrl ||
+    user?.photo ||
+    user?.avatar;
+
+  if (photoUrl) {
+    return { uri: photoUrl };
+  }
+
+  return schoolCelebration;
+};
 
 const summarizeTeacherHistory = (records = []) =>
   records.reduce(
@@ -245,6 +307,28 @@ const studentTabSections = [
 const getActiveTabSection = (sections, tabKey) =>
   sections.find((section) => section.tabs.some((tab) => tab.key === tabKey)) || sections[0] || null;
 
+const getSectionIcon = (sectionKey) =>
+  ({
+    home: iconHome,
+    attendance: iconAttendance,
+    marks: iconReportCard,
+    reportsHistory: iconReports,
+    fees: iconReportCard,
+    results: iconView,
+  }[sectionKey] || iconHome);
+
+const getTeacherFeatureIcon = (featureKey) =>
+  ({
+    gpsAttendance: iconCheckout,
+    gpsHistory: iconHistory,
+    attendance: iconAttendance,
+    reports: iconReports,
+    history: iconHistory,
+    holidays: iconAttendance,
+    submitMarks: iconReportCard,
+    viewMarks: iconView,
+  }[featureKey] || iconAttendance);
+
 const getAccessToken = (data) => data?.access_token || data?.session?.access_token || "";
 const getRefreshToken = (data) => data?.session?.refresh_token || data?.refresh_token || "";
 const getMustResetPassword = (data) =>
@@ -258,12 +342,12 @@ const getTokenExpiresAt = (data) => {
     return new Date(sessionExpiresAt * 1000).toISOString();
   }
 
-  const expiresIn = data?.session?.expires_in || data?.expires_in;
+  const expiresIn = data?.token_info?.expires_in || data?.session?.expires_in || data?.expires_in;
   if (Number.isFinite(Number(expiresIn))) {
     return new Date(Date.now() + Number(expiresIn) * 1000).toISOString();
   }
 
-  return new Date(Date.now() + 25 * 60 * 1000).toISOString();
+  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 };
 
 const getExpoProjectId = () =>
@@ -352,6 +436,7 @@ const summarizeRecords = (records = []) =>
 export default function App() {
   const [booting, setBooting] = useState(true);
   const [session, setSessionState] = useState(null);
+  const [legalView, setLegalView] = useState(null);
   const refreshInFlightRef = useRef(null);
 
   useEffect(() => {
@@ -488,30 +573,89 @@ export default function App() {
     );
   }
 
+  if (legalView) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <ExpoStatusBar style="dark" />
+        <LegalScreen
+          type={legalView}
+          onBack={() => setLegalView(null)}
+        />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ExpoStatusBar style="dark" />
       {session?.role === "student" && session.mustResetPassword ? (
         <StudentPasswordSetup session={session} onComplete={handleSession} onLogout={handleLogout} />
       ) : session ? (
-        <Dashboard session={session} onLogout={handleLogout} />
+        <Dashboard
+          session={session}
+          onLogout={handleLogout}
+          onOpenPrivacy={() => setLegalView("privacy")}
+          onOpenTerms={() => setLegalView("terms")}
+          onOpenContact={() => setLegalView("contact")}
+        />
       ) : (
-        <LoginScreen onLogin={handleSession} />
+        <LoginScreen
+          onLogin={handleSession}
+          onOpenPrivacy={() => setLegalView("privacy")}
+          onOpenTerms={() => setLegalView("terms")}
+          onOpenContact={() => setLegalView("contact")}
+        />
       )}
     </SafeAreaView>
   );
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   const [mode, setMode] = useState("teacher");
   const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadSavedLogin(mode)
+      .then((savedLogin) => {
+        if (cancelled) return;
+
+        if (savedLogin?.identity && savedLogin?.password) {
+          setIdentity(savedLogin.identity);
+          setPassword(savedLogin.password);
+          setRememberPassword(true);
+          return;
+        }
+
+        setIdentity("");
+        setPassword("");
+        setRememberPassword(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRememberPassword(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   const submit = async () => {
     if (!identity.trim() || !password) {
       setError("Login details bharna zaruri hai.");
+      return;
+    }
+
+    if (!agreed) {
+      setError("Privacy Policy aur Terms & Conditions accept karna zaruri hai.");
       return;
     }
 
@@ -529,15 +673,23 @@ function LoginScreen({ onLogin }) {
         throw new Error("Login response me token nahi mila.");
       }
 
-      await onLogin({
+      const nextSession = {
         role: mode,
         token,
         refreshToken: getRefreshToken(response),
-        tokenExpiresAt: mode === "teacher" ? getTokenExpiresAt(response) : null,
+        tokenExpiresAt: getTokenExpiresAt(response),
         user: response.user,
         mustResetPassword: mode === "student" ? getMustResetPassword(response) : false,
         savedAt: new Date().toISOString(),
-      });
+      };
+
+      if (rememberPassword) {
+        await saveSavedLogin(mode, { identity, password });
+      } else {
+        await clearSavedLogin(mode);
+      }
+
+      await onLogin(nextSession);
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -546,71 +698,169 @@ function LoginScreen({ onLogin }) {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.loginShell}
-    >
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.portalShell}>
       <ScrollView
         automaticallyAdjustKeyboardInsets
-        contentContainerStyle={styles.loginContent}
+        contentContainerStyle={styles.portalContent}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.brandBlock}>
-          <View style={styles.logoHalo}>
-            <View style={styles.logoMark}>
-              <Image source={schoolLogo} style={styles.logoImage} resizeMode="contain" />
+        <View style={styles.portalFrame}>
+          <View style={styles.portalPhotoLayer}>
+            <Image source={schoolCelebration} style={styles.portalPhotoImage} resizeMode="cover" />
+            <View style={styles.portalPhotoWash} />
+          </View>
+          <View style={styles.portalWhiteSheet} />
+          <View style={styles.portalGoldArc} />
+
+          <View style={styles.portalHero}>
+            <View style={styles.portalLogoWrap}>
+              <View style={styles.portalLogoGlow} />
+              <View style={styles.portalLogoRing}>
+                <Image source={schoolLogo} style={styles.portalLogoImage} resizeMode="contain" />
+              </View>
+            </View>
+
+            <View style={styles.portalEyebrowRow}>
+              <View style={styles.portalTinyLine} />
+              <Text style={styles.portalEyebrow}>{SCHOOL_SHORT_NAME} MOBILE PORTAL</Text>
+              <View style={styles.portalTinyLine} />
+            </View>
+            <Text style={styles.portalTitle}>{SCHOOL_NAME}</Text>
+            <Text style={styles.portalSubtitle}>{SCHOOL_TAGLINE}</Text>
+
+            <View style={styles.portalDivider}>
+              <View style={styles.portalDividerLine} />
+              <Text style={styles.portalDividerStar}>*</Text>
+              <View style={styles.portalDividerLine} />
+            </View>
+
+            <View style={styles.portalFeatureRow}>
+              <View style={styles.portalFeatureCard}>
+                <View style={[styles.portalFeatureIcon, styles.portalFeatureIconBlue]}>
+                  <Image source={iconCheckout} style={[styles.portalFeatureIconImage, styles.portalFeatureIconImageBlue]} resizeMode="contain" />
+                </View>
+                <Text style={styles.portalFeatureTitle}>Teachers</Text>
+                <Text style={styles.portalFeatureText}>Manage classes</Text>
+              </View>
+              <View style={styles.portalFeatureCard}>
+                <View style={[styles.portalFeatureIcon, styles.portalFeatureIconGreen]}>
+                  <Image source={iconStudents} style={[styles.portalFeatureIconImage, styles.portalFeatureIconImageGreen]} resizeMode="contain" />
+                </View>
+                <Text style={styles.portalFeatureTitle}>Students</Text>
+                <Text style={styles.portalFeatureText}>Track learning</Text>
+              </View>
+              <View style={styles.portalFeatureCard}>
+                <View style={[styles.portalFeatureIcon, styles.portalFeatureIconGold]}>
+                  <Image source={iconAttendance} style={[styles.portalFeatureIconImage, styles.portalFeatureIconImageGold]} resizeMode="contain" />
+                </View>
+                <Text style={styles.portalFeatureTitle}>Attendance</Text>
+                <Text style={styles.portalFeatureText}>Daily updates</Text>
+              </View>
             </View>
           </View>
-          <Text style={styles.brandKicker}>{SCHOOL_SHORT_NAME} Mobile Portal</Text>
-          <Text style={styles.brandTitle}>{SCHOOL_NAME}</Text>
-          <Text style={styles.brandSubtitle}>{SCHOOL_TAGLINE}</Text>
-          <View style={styles.brandPillRow}>
-            <Text style={styles.brandPill}>Teachers</Text>
-            <Text style={styles.brandPill}>Students</Text>
-            <Text style={styles.brandPill}>Attendance</Text>
+
+          <View style={styles.portalSegment}>
+            <View style={[styles.portalSegmentThumb, mode === "student" && styles.portalSegmentThumbRight]} />
+            <Pressable onPress={() => setMode("teacher")} style={styles.portalSegmentButton}>
+              <Text style={[styles.portalSegmentText, mode === "teacher" && styles.portalSegmentTextActive]}>Teacher</Text>
+            </Pressable>
+            <Pressable onPress={() => setMode("student")} style={styles.portalSegmentButton}>
+              <Text style={[styles.portalSegmentText, mode === "student" && styles.portalSegmentTextActive]}>Student</Text>
+            </Pressable>
           </View>
-        </View>
 
-        <View style={styles.segment}>
-          <SegmentButton active={mode === "teacher"} label="Teacher" onPress={() => setMode("teacher")} />
-          <SegmentButton active={mode === "student"} label="Student" onPress={() => setMode("student")} />
-        </View>
+          <View style={styles.portalFormCard}>
+            <Text style={styles.portalFormTitle}>Welcome Back!</Text>
+            <Text style={styles.portalFormSubtitle}>Sign in to continue to your dashboard</Text>
 
-        <View style={styles.formBlock}>
-          <Text style={styles.inputLabel}>{mode === "teacher" ? "Email" : "Username"}</Text>
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType={mode === "teacher" ? "email-address" : "default"}
-            onChangeText={setIdentity}
-            placeholder={mode === "teacher" ? "teacher@school.com" : "student username"}
-            placeholderTextColor="#8a8f98"
-            style={styles.input}
-            value={identity}
-          />
+            <Text style={styles.portalLabel}>{mode === "teacher" ? "EMAIL" : "USERNAME"}</Text>
+            <View style={styles.portalInputShell}>
+              <View style={styles.portalInputIcon}>
+                <Text style={styles.portalInputIconText}>{mode === "teacher" ? "✉" : "👤"}</Text>
+              </View>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType={mode === "teacher" ? "email-address" : "default"}
+                onChangeText={setIdentity}
+                placeholder={mode === "teacher" ? "teacher@school.com" : "student username"}
+                placeholderTextColor="#a3adbc"
+                style={styles.portalInput}
+                value={identity}
+              />
+            </View>
 
-          <Text style={styles.inputLabel}>{mode === "teacher" ? "Password" : "DOB / Password"}</Text>
-          <TextInput
-            onChangeText={setPassword}
-            placeholder={mode === "teacher" ? "Password" : "YYYY-MM-DD or password"}
-            placeholderTextColor="#8a8f98"
-            secureTextEntry={mode === "teacher"}
-            style={styles.input}
-            value={password}
-          />
+            <Text style={styles.portalLabel}>{mode === "teacher" ? "PASSWORD" : "PASSWORD"}</Text>
+            <View style={styles.portalInputShell}>
+              <View style={styles.portalInputIcon}>
+                <Text style={styles.portalInputIconText}>🔒</Text>
+              </View>
+              <TextInput
+                onChangeText={setPassword}
+                placeholder="Password"
+                placeholderTextColor="#a3adbc"
+                secureTextEntry={!showPassword}
+                style={styles.portalInput}
+                value={password}
+              />
+              <Pressable onPress={() => setShowPassword((current) => !current)} style={styles.portalEyeButton}>
+                <Text style={styles.portalEyeText}>{showPassword ? "◉" : "◌"}</Text>
+              </Pressable>
+            </View>
 
-          {mode === "student" ? (
-            <Text style={styles.helperText}>
-              First login me apni date of birth use karein. Login ke baad password set karna mandatory hai.
+            {mode === "student" ? <Text style={styles.portalHelperText}>First login me apni date of birth use karein. Login ke baad password set karna mandatory hai.</Text> : null}
+            {error ? <Text style={styles.portalErrorText}>{error}</Text> : null}
+
+            <View style={styles.portalOptionsRow}>
+              <Pressable
+                onPress={() => setRememberPassword((current) => !current)}
+                style={styles.portalRememberRow}
+              >
+                <View style={[styles.portalCheckBox, rememberPassword && styles.portalCheckBoxActive]}>
+                  <Text style={styles.portalCheckText}>✓</Text>
+                </View>
+                <Text style={styles.portalRememberText}>Save password</Text>
+              </Pressable>
+              <Pressable onPress={() => Alert.alert("Forgot Password", "Please contact the school office.")}>
+                <Text style={styles.portalForgotText}>Forgot Password?</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.portalConsentRow}>
+              <Pressable
+                onPress={() => setAgreed((current) => !current)}
+                style={[styles.portalConsentBox, agreed && styles.portalConsentBoxActive]}
+              >
+                <Text style={styles.portalConsentCheck}>{agreed ? "✓" : ""}</Text>
+              </Pressable>
+              <Text style={styles.portalConsentText}>I agree to the Privacy Policy and Terms &amp; Conditions.</Text>
+            </View>
+
+            <Pressable disabled={loading || !agreed} onPress={submit} style={[styles.portalLoginButton, (loading || !agreed) && styles.disabledButton]}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.portalLoginText}>Login</Text>}
+            </Pressable>
+
+            <View style={styles.portalLegalLinksRow}>
+              <Pressable onPress={onOpenPrivacy} style={styles.portalLegalLinkButton}>
+                <Text style={styles.portalLegalLinkText}>Privacy Policy</Text>
+              </Pressable>
+              <Pressable onPress={onOpenTerms} style={styles.portalLegalLinkButton}>
+                <Text style={styles.portalLegalLinkText}>Terms & Conditions</Text>
+              </Pressable>
+              <Pressable onPress={onOpenContact} style={styles.portalLegalLinkButton}>
+                <Text style={styles.portalLegalLinkText}>Contact School</Text>
+              </Pressable>
+            </View>
+
+          </View>
+
+          <View style={styles.portalFooter}>
+            <Text style={styles.portalFooterText}>
+              Education is the most powerful weapon which you can use to change the world.
             </Text>
-          ) : null}
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <Pressable disabled={loading} onPress={submit} style={[styles.primaryButton, loading && styles.disabledButton]}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Login</Text>}
-          </Pressable>
+            <Text style={styles.portalFooterAuthor}>- Nelson Mandela</Text>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -723,7 +973,14 @@ function StudentPasswordSetup({ session, onComplete, onLogout }) {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <Pressable disabled={loading} onPress={submit} style={[styles.primaryButton, loading && styles.disabledButton]}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Set Password</Text>}
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <View style={styles.buttonContentRow}>
+                <Feather name="lock" size={18} color="#fff" />
+                <Text style={styles.primaryButtonText}>Set Password</Text>
+              </View>
+            )}
           </Pressable>
 
           <Pressable onPress={onLogout} style={[styles.logoutButton, { marginTop: 10, alignItems: "center" }]}>
@@ -735,7 +992,7 @@ function StudentPasswordSetup({ session, onComplete, onLogout }) {
   );
 }
 
-function StudentProfilePage({ student, onBack, onLogout }) {
+function StudentProfilePage({ student, onBack, onLogout, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   const sections = [
     {
       title: "Identity",
@@ -795,7 +1052,7 @@ function StudentProfilePage({ student, onBack, onLogout }) {
 
       <View style={styles.profileHeroCard}>
         <View style={styles.profileHeroAvatar}>
-          <Text style={styles.profileHeroAvatarText}>{getInitials(getStudentDisplayName(student))}</Text>
+          <Image source={getProfilePhotoSource(student)} style={styles.profileHeroAvatarImage} resizeMode="cover" />
         </View>
         <View style={styles.profileHeroText}>
           <Text style={styles.profileHeroName}>{getStudentDisplayName(student)}</Text>
@@ -822,6 +1079,21 @@ function StudentProfilePage({ student, onBack, onLogout }) {
         ))}
       </View>
 
+      <View style={styles.profileMenuCard}>
+        <Text style={styles.profileMenuTitle}>Profile Menu</Text>
+        <View style={styles.profileMenuGrid}>
+          <Pressable onPress={onOpenPrivacy} style={styles.profileMenuButton}>
+            <Text style={styles.profileMenuButtonText}>Privacy Policy</Text>
+          </Pressable>
+          <Pressable onPress={onOpenTerms} style={styles.profileMenuButton}>
+            <Text style={styles.profileMenuButtonText}>Terms & Conditions</Text>
+          </Pressable>
+          <Pressable onPress={onOpenContact} style={styles.profileMenuButton}>
+            <Text style={styles.profileMenuButtonText}>Contact School</Text>
+          </Pressable>
+        </View>
+      </View>
+
       <Pressable onPress={onLogout} style={[styles.logoutButton, styles.profileLogoutButton]}>
         <Text style={styles.logoutText}>Logout</Text>
       </Pressable>
@@ -829,7 +1101,87 @@ function StudentProfilePage({ student, onBack, onLogout }) {
   );
 }
 
-function Dashboard({ session, onLogout }) {
+function LegalScreen({ type, onBack }) {
+  const isPrivacy = type === "privacy";
+  const isTerms = type === "terms";
+  const title = isPrivacy ? "Privacy Policy" : isTerms ? "Terms & Conditions" : "Contact School";
+  const points = isPrivacy ? privacyPolicyPoints : isTerms ? termsPoints : [];
+
+  const openContact = (target) => {
+    Linking.openURL(target).catch(() => {
+      Alert.alert("Unable to open link", target);
+    });
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.legalShell}>
+      <View style={styles.legalCard}>
+        <View style={styles.legalHeaderRow}>
+          <Pressable onPress={onBack} style={styles.legalBackButton}>
+            <Text style={styles.legalBackButtonText}>Back</Text>
+          </Pressable>
+          <View style={styles.legalHeaderText}>
+            <Text style={styles.legalKicker}>School ERP</Text>
+            <Text style={styles.legalTitle}>{title}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.legalIntro}>
+          {isPrivacy
+            ? "This policy explains the basic information collected by the school app, why it is needed and how families can contact the school."
+            : isTerms
+              ? "These simple terms explain how the app should be used by teachers, students and parents."
+              : "Use the contact details below for data correction, deletion requests or general privacy support."}
+        </Text>
+
+        {points.length ? (
+          <View style={styles.legalPoints}>
+            {points.map((point) => (
+              <View key={point} style={styles.legalPointRow}>
+                <Text style={styles.legalPointBullet}>•</Text>
+                <Text style={styles.legalPointText}>{point}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.legalContactCard}>
+          <Text style={styles.legalSectionTitle}>School Contact</Text>
+          <Text style={styles.legalContactText}>School Name: {SCHOOL_NAME}</Text>
+          <Text style={styles.legalContactText}>Email: {SCHOOL_EMAIL}</Text>
+          <Text style={styles.legalContactText}>Phone: {SCHOOL_PHONE}</Text>
+          <Text style={styles.legalContactText}>Address: {SCHOOL_ADDRESS}</Text>
+          <Text style={styles.legalContactText}>Office Hours: {SCHOOL_SUPPORT_HOURS}</Text>
+        </View>
+
+        {type === "contact" ? (
+          <View style={styles.legalButtonRow}>
+            <Pressable onPress={() => openContact(`tel:${SCHOOL_PHONE.replace(/\s/g, "")}`)} style={styles.legalActionButton}>
+              <Text style={styles.legalActionButtonText}>Call</Text>
+            </Pressable>
+            <Pressable onPress={() => openContact(`mailto:${SCHOOL_EMAIL}`)} style={styles.legalActionButton}>
+              <Text style={styles.legalActionButtonText}>Email</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => openContact(`https://maps.google.com/?q=${encodeURIComponent(SCHOOL_ADDRESS)}`)}
+              style={styles.legalActionButton}
+            >
+              <Text style={styles.legalActionButtonText}>Map</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View style={styles.legalFooterCard}>
+          <Text style={styles.legalFooterText}>
+            The school may update these pages from time to time. Please check them again after app updates.
+          </Text>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+function Dashboard({ session, onLogout, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   const [activeTab, setActiveTab] = useState("home");
   const [studentProfile, setStudentProfile] = useState(session.user || null);
   const tabSections = session.role === "teacher" ? teacherTabSections : studentTabSections;
@@ -890,20 +1242,23 @@ function Dashboard({ session, onLogout }) {
           <View style={styles.headerTextBlock}>
             <Text style={styles.headerSchool}>{SCHOOL_NAME}</Text>
             <Text numberOfLines={1} style={styles.headerTitle}>
-              {session.user?.name || session.user?.email || `${SCHOOL_SHORT_NAME} Mobile`}
+              {session.role === "teacher"
+                ? session.user?.email || session.user?.name || `${SCHOOL_SHORT_NAME} Mobile`
+                : session.user?.name || session.user?.email || `${SCHOOL_SHORT_NAME} Mobile`}
             </Text>
+            {session.role === "teacher" ? (
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleBadgeText}>Teacher</Text>
+              </View>
+            ) : null}
           </View>
         </View>
         <View style={styles.headerActions}>
           {session.role === "teacher" ? (
-            <>
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleBadgeText}>Teacher</Text>
-              </View>
-              <Pressable onPress={onLogout} style={styles.logoutButton}>
-                <Text style={styles.logoutText}>Logout</Text>
-              </Pressable>
-            </>
+            <Pressable onPress={onLogout} style={styles.dashboardLogoutButton}>
+              <Text style={styles.dashboardLogoutIconText}>⇥</Text>
+              <Text style={styles.dashboardLogoutText}>Logout</Text>
+            </Pressable>
           ) : (
             <Pressable
               onPress={() => setActiveTab("profile")}
@@ -912,9 +1267,11 @@ function Dashboard({ session, onLogout }) {
               accessibilityLabel="Open student profile"
             >
               <View style={styles.profileAvatar}>
-                <Text style={styles.profileAvatarText}>
-                  {getInitials(getStudentDisplayName(studentProfile || session.user))}
-                </Text>
+                <Image
+                  source={getProfilePhotoSource(studentProfile || session.user)}
+                  style={styles.profileAvatarImage}
+                  resizeMode="cover"
+                />
               </View>
             </Pressable>
           )}
@@ -936,6 +1293,9 @@ function Dashboard({ session, onLogout }) {
           session={session}
           onStudentLoaded={setStudentProfile}
           onLogout={onLogout}
+          onOpenPrivacy={onOpenPrivacy}
+          onOpenTerms={onOpenTerms}
+          onOpenContact={onOpenContact}
         />
       )}
 
@@ -954,9 +1314,14 @@ function Dashboard({ session, onLogout }) {
                     style={[styles.parentTabButton, isActive && styles.parentTabButtonActive]}
                   >
                     <View style={[styles.parentTabBadge, isActive && styles.parentTabBadgeActive]}>
-                      <Text style={[styles.parentTabBadgeText, isActive && styles.parentTabBadgeTextActive]}>
-                        {String(section.title || "").slice(0, 1).toUpperCase()}
-                      </Text>
+                      <Image
+                        source={getSectionIcon(section.key)}
+                        style={[
+                          styles.parentTabBadgeImage,
+                          { tintColor: isActive ? "#fff" : "#63708a" },
+                        ]}
+                        resizeMode="contain"
+                      />
                     </View>
                     <Text style={[styles.parentTabText, isActive && styles.parentTabTextActive]}>{section.title}</Text>
                   </Pressable>
@@ -1055,7 +1420,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
     }
     const missing = students.filter((student) => !statuses[student.id]);
     if (missing.length) {
-      Alert.alert("Attendance missing", "Sabhi students ka status select karein.");
+      Alert.alert("Attendance missing", "All studenska status select karein.");
       return;
     }
 
@@ -1170,7 +1535,17 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
   );
 }
 
-function StudentArea({ activeTab, onTabChange, sectionTabs, session, onStudentLoaded, onLogout }) {
+function StudentArea({
+  activeTab,
+  onTabChange,
+  sectionTabs,
+  session,
+  onStudentLoaded,
+  onLogout,
+  onOpenPrivacy,
+  onOpenTerms,
+  onOpenContact,
+}) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1227,7 +1602,14 @@ function StudentArea({ activeTab, onTabChange, sectionTabs, session, onStudentLo
         }
       >
         {error ? <Notice tone="error" text={error} /> : null}
-        <StudentProfilePage student={student} onBack={() => onTabChange("home")} onLogout={onLogout} />
+        <StudentProfilePage
+          student={student}
+          onBack={() => onTabChange("home")}
+          onLogout={onLogout}
+          onOpenPrivacy={onOpenPrivacy}
+          onOpenTerms={onOpenTerms}
+          onOpenContact={onOpenContact}
+        />
       </ScrollView>
     );
   }
@@ -1284,50 +1666,94 @@ function SectionTabsBar({ tabs, activeTab, onTabChange }) {
 
 function TeacherHome({ assignment, onOpen, records, students }) {
   const summary = summarizeRecords(records);
+  const academicYear = assignment?.academic_year || getDefaultAcademicYear();
+  const classLabel = assignment ? `Class ${assignment.class} - ${assignment.section}` : "No assignment";
 
   return (
-    <View>
-      <View style={styles.heroPanel}>
-        <View style={styles.heroBrandRow}>
-          <View style={styles.heroLogoWrap}>
-            <Image source={schoolLogo} style={styles.heroLogo} resizeMode="contain" />
+    <View style={styles.teacherHomeShell}>
+      <View style={styles.teacherClassCard}>
+        <View style={styles.teacherClassTopRow}>
+          <View style={styles.teacherClassLogoWrap}>
+            <Image source={schoolLogo} style={styles.teacherClassLogo} resizeMode="contain" />
           </View>
-          <View style={styles.rowBody}>
-            <Text style={styles.panelEyebrow}>{SCHOOL_NAME}</Text>
-            <Text style={styles.panelSubEyebrow}>Teacher Workspace</Text>
+          <View style={styles.teacherClassTextBlock}>
+            <Text style={styles.teacherClassSchool}>{SCHOOL_NAME}</Text>
+            <Text style={styles.teacherClassMeta}>Teacher Workspace</Text>
           </View>
         </View>
-        <Text style={styles.panelTitle}>
-          {assignment ? `Class ${assignment.class} - ${assignment.section}` : "No assignment"}
-        </Text>
-        <Text style={styles.panelMeta}>
-          {assignment?.academic_year || getDefaultAcademicYear()}
-        </Text>
+        <Text style={styles.teacherClassTitle}>{classLabel}</Text>
+        <View style={styles.teacherClassYearRow}>
+          <Feather name="calendar" size={12} color="#d9e8ff" />
+          <Text style={styles.teacherClassYear}>Academic Year {academicYear}</Text>
+        </View>
+        <View style={styles.teacherClassArt}>
+          <Image source={bookIllustration} style={styles.teacherClassArtImage} resizeMode="contain" />
+        </View>
       </View>
 
-      <View style={styles.metricGrid}>
-        <MetricCard label="Students" value={students.length} tone="teal" />
-        <MetricCard label="Present" value={summary.present} tone="green" />
-        <MetricCard label="Absent" value={summary.absent} tone="red" />
-        <MetricCard label="Late" value={summary.late} tone="amber" />
+      <View style={styles.teacherStatsGrid}>
+        <View style={[styles.teacherStatCard, styles.teacherStatBlue]}>
+          <View style={styles.teacherStatIconWrap}>
+            <Image source={iconStudents} style={[styles.teacherStatIconImage, { tintColor: "#2a64e8" }]} resizeMode="contain" />
+          </View>
+          <View style={styles.teacherStatBody}>
+            <Text style={styles.teacherStatLabel}>Students</Text>
+            <Text style={styles.teacherStatValue}>{students.length}</Text>
+            <Text style={styles.teacherStatMeta}>Total Students</Text>
+          </View>
+        </View>
+        <View style={[styles.teacherStatCard, styles.teacherStatGreen]}>
+          <View style={styles.teacherStatIconWrap}>
+            <Image source={iconCheckout} style={[styles.teacherStatIconImage, { tintColor: "#18a05e" }]} resizeMode="contain" />
+          </View>
+          <View style={styles.teacherStatBody}>
+            <Text style={styles.teacherStatLabel}>Present</Text>
+            <Text style={styles.teacherStatValue}>{summary.present}</Text>
+            <Text style={styles.teacherStatMeta}>Present Today</Text>
+          </View>
+        </View>
+        <View style={[styles.teacherStatCard, styles.teacherStatRed]}>
+          <View style={styles.teacherStatIconWrap}>
+            <Image source={iconStudents} style={[styles.teacherStatIconImage, { tintColor: "#ef4a4a" }]} resizeMode="contain" />
+          </View>
+          <View style={styles.teacherStatBody}>
+            <Text style={styles.teacherStatLabel}>Absent</Text>
+            <Text style={styles.teacherStatValue}>{summary.absent}</Text>
+            <Text style={styles.teacherStatMeta}>Absent Today</Text>
+          </View>
+        </View>
+        <View style={[styles.teacherStatCard, styles.teacherStatAmber]}>
+          <View style={styles.teacherStatIconWrap}>
+            <Image source={iconHistory} style={[styles.teacherStatIconImage, { tintColor: "#ff9d00" }]} resizeMode="contain" />
+          </View>
+          <View style={styles.teacherStatBody}>
+            <Text style={styles.teacherStatLabel}>Late</Text>
+            <Text style={styles.teacherStatValue}>{summary.late}</Text>
+            <Text style={styles.teacherStatMeta}>Late Today</Text>
+          </View>
+        </View>
       </View>
 
-      <View style={styles.featureSection}>
-        <Text style={styles.sectionTitle}>Teacher Features</Text>
-        <View style={styles.featureGrid}>
+      <View style={styles.teacherFeatureSection}>
+        <View style={styles.teacherSectionTitleWrap}>
+          <Text style={styles.teacherSectionTitle}>Teacher Features</Text>
+          <View style={styles.teacherSectionUnderline} />
+        </View>
+        <View style={styles.teacherFeatureList}>
           {teacherFeatures.map((feature) => (
             <Pressable
               key={feature.key}
               onPress={() => onOpen(feature.key)}
-              style={styles.featureCard}
+              style={styles.teacherFeatureItem}
             >
-              <View style={styles.featureIcon}>
-                <Text style={styles.featureIconText}>{feature.label.slice(0, 1)}</Text>
+              <View style={styles.teacherFeatureIcon}>
+                <Image source={getTeacherFeatureIcon(feature.key)} style={styles.teacherFeatureIconImage} resizeMode="contain" />
               </View>
-              <View style={styles.rowBody}>
-                <Text style={styles.featureTitle}>{feature.label}</Text>
-                <Text style={styles.featureMeta}>{feature.meta}</Text>
+              <View style={styles.teacherFeatureBody}>
+                <Text style={styles.teacherFeatureTitle}>{feature.label}</Text>
+                <Text style={styles.teacherFeatureMeta}>{feature.meta}</Text>
               </View>
+              <Feather name="chevron-right" size={18} color="#7b8797" />
             </Pressable>
           ))}
         </View>
@@ -1482,9 +1908,12 @@ function AttendanceMarker({
         {saving ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.primaryButtonText}>
-            {isHoliday ? "Holiday - No Attendance" : disabled ? "Attendance Saved" : "Save Attendance"}
-          </Text>
+          <View style={styles.buttonContentRow}>
+            <Feather name={isHoliday ? "slash" : disabled ? "check-circle" : "calendar"} size={18} color="#fff" />
+            <Text style={styles.primaryButtonText}>
+              {isHoliday ? "Holiday - No Attendance" : disabled ? "Attendance Saved" : "Save Attendance"}
+            </Text>
+          </View>
         )}
       </Pressable>
     </View>
@@ -1648,7 +2077,10 @@ function TeacherGpsAttendancePanel({ session }) {
 
       {lockedRequest ? (
         <View style={styles.marksCard}>
-          <Text style={styles.sectionTitle}>Checkout Missing</Text>
+          <View style={styles.inlineTitleRow}>
+            <Feather name="alert-triangle" size={18} color="#1458bf" />
+            <Text style={styles.sectionTitle}>Checkout Missing</Text>
+          </View>
           <Text style={styles.rowMeta}>
             {lockedRequest.attendance_date} | Check in {lockedRequest.check_in_at ? new Date(lockedRequest.check_in_at).toLocaleTimeString("en-IN") : "-"}
           </Text>
@@ -1673,7 +2105,14 @@ function TeacherGpsAttendancePanel({ session }) {
             value={checkoutForm.remarks}
           />
           <Pressable disabled={saving} onPress={() => submitPendingCheckout(lockedRequest)} style={[styles.primaryButton, saving && styles.disabledButton]}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Submit Explanation</Text>}
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <View style={styles.buttonContentRow}>
+                <Feather name="edit-3" size={18} color="#fff" />
+                <Text style={styles.primaryButtonText}>Submit Explanation</Text>
+              </View>
+            )}
           </Pressable>
         </View>
       ) : null}
@@ -1693,25 +2132,38 @@ function TeacherGpsAttendancePanel({ session }) {
         <MetricCard label="Distance" value={attendance?.check_in_distance_meters ? `${Math.round(attendance.check_in_distance_meters)}m` : "--"} tone="red" />
       </View>
 
-      <View style={styles.statusRow}>
+      <View style={styles.actionButtonRow}>
         <Pressable
           disabled={saving || !settings || Boolean(attendance?.check_in_at) || Boolean(lockedRequest)}
           onPress={() => runGpsAction("checkIn")}
-          style={[styles.statusButton, styles.statusButtonActive, (saving || !settings || Boolean(attendance?.check_in_at) || Boolean(lockedRequest)) && styles.disabledButton]}
+          style={[
+            styles.actionButton,
+            styles.actionButtonSoft,
+            (saving || !settings || Boolean(attendance?.check_in_at) || Boolean(lockedRequest)) && styles.disabledButton,
+          ]}
         >
-          <Text style={styles.statusTextActive}>Check In</Text>
+          <Feather name="log-in" size={18} color="#1458bf" />
+          <Text style={styles.actionButtonText}>Check In</Text>
         </Pressable>
         <Pressable
           disabled={saving || !settings || !attendance?.check_in_at || Boolean(attendance?.check_out_at) || Boolean(lockedRequest)}
           onPress={() => runGpsAction("checkOut")}
-          style={[styles.statusButton, styles.statusButtonActive, (saving || !settings || !attendance?.check_in_at || Boolean(attendance?.check_out_at) || Boolean(lockedRequest)) && styles.disabledButton]}
+          style={[
+            styles.actionButton,
+            styles.actionButtonPrimary,
+            (saving || !settings || !attendance?.check_in_at || Boolean(attendance?.check_out_at) || Boolean(lockedRequest)) && styles.disabledButton,
+          ]}
         >
-          <Text style={styles.statusTextActive}>Check Out</Text>
+          <Feather name="log-out" size={18} color="#fff" />
+          <Text style={styles.actionButtonTextPrimary}>Check Out</Text>
         </Pressable>
       </View>
 
       <View style={[styles.marksCard, styles.topGap]}>
-        <Text style={styles.sectionTitle}>Apply Leave</Text>
+        <View style={styles.inlineTitleRow}>
+          <Feather name="file-plus" size={18} color="#16a34a" />
+          <Text style={styles.sectionTitle}>Apply Leave</Text>
+        </View>
         <Text style={styles.inputLabel}>Leave Type</Text>
         <View style={styles.dropdownWrap}>
           <Pressable
@@ -1748,12 +2200,22 @@ function TeacherGpsAttendancePanel({ session }) {
         <Text style={styles.inputLabel}>Reason</Text>
         <TextInput style={styles.input} value={leaveForm.reason} onChangeText={(value) => setLeaveForm((prev) => ({ ...prev, reason: value }))} placeholder="Reason" placeholderTextColor="#8a8f98" />
         <Pressable disabled={saving} onPress={submitLeave} style={[styles.primaryButton, saving && styles.disabledButton]}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Submit Leave</Text>}
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <View style={styles.buttonContentRow}>
+              <Feather name="send" size={18} color="#fff" />
+              <Text style={styles.primaryButtonText}>Submit Leave</Text>
+            </View>
+          )}
         </Pressable>
       </View>
 
       <View style={[styles.list, styles.topGap]}>
-        <Text style={styles.sectionTitle}>Leave Status</Text>
+        <View style={styles.inlineTitleRow}>
+          <Feather name="clock" size={18} color="#1458bf" />
+          <Text style={styles.sectionTitle}>Leave Status</Text>
+        </View>
         {leaves.length ? leaves.slice(0, 5).map((leave) => (
           <View key={leave.id} style={styles.recordRow}>
             <View style={styles.rowBody}>
@@ -2076,7 +2538,10 @@ function SubmitMarksPanel({ assignment, session, students }) {
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>Submit Marks</Text>
+      <View style={styles.inlineTitleRow}>
+        <Feather name="edit" size={18} color="#1458bf" />
+        <Text style={styles.sectionTitle}>Submit Marks</Text>
+      </View>
       <View style={styles.inlineField}>
         <Text style={styles.inputLabel}>Terminal</Text>
         <View style={styles.dropdownWrap}>
@@ -2186,7 +2651,14 @@ function SubmitMarksPanel({ assignment, session, students }) {
       ) : null}
 
       <Pressable disabled={saving || loading || !subjects.length} onPress={saveMarks} style={[styles.primaryButton, (saving || loading || !subjects.length) && styles.disabledButton]}>
-        {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Submit Marks</Text>}
+        {saving ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <View style={styles.buttonContentRow}>
+            <Feather name="save" size={18} color="#fff" />
+            <Text style={styles.primaryButtonText}>Submit Marks</Text>
+          </View>
+        )}
       </Pressable>
     </View>
   );
@@ -2633,6 +3105,8 @@ function StudentHistoryPanel({ session, students }) {
 function HolidayCalendarPanel({ session }) {
   const isStudent = session.role === "student";
   const monthOptions = useMemo(() => buildRecentMonthOptions(12), []);
+  const { width } = useWindowDimensions();
+  const isCompact = width < 520;
   const [month, setMonth] = useState(monthIso());
   const [monthOpen, setMonthOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("holidays");
@@ -2708,43 +3182,57 @@ function HolidayCalendarPanel({ session }) {
     }
   };
 
-  return (
-    <View>
-      <Text style={styles.sectionTitle}>{activeTab === "leaveRequests" && !isStudent ? "Leave Requests" : "Holiday Calendar"}</Text>
+  const panelTitle = activeTab === "leaveRequests" && !isStudent ? "Leave Requests" : "Holiday Calendar";
+  const panelInfoTitle =
+    activeTab === "leaveRequests" && !isStudent
+      ? "Pending leave requests are ready for review."
+      : "Holidays are managed by the school admin.";
+  const panelInfoSubtext =
+    activeTab === "leaveRequests" && !isStudent
+      ? "Month filter se selected month ke requests dikhenge."
+      : "Fridays are automatically marked as weekly off.";
 
-      <View style={styles.holidayToolbar}>
-        <View style={styles.holidayMonthField}>
-          <Text style={styles.inputLabel}>Month</Text>
-          <View style={styles.dropdownWrap}>
-            <Pressable
-              onPress={() => setMonthOpen((prev) => !prev)}
-              style={[styles.input, styles.dropdownButton, monthOpen && styles.dropdownButtonActive]}
-            >
-              <Text style={styles.dropdownButtonText}>{monthLabel}</Text>
-              <Text style={styles.dropdownChevron}>{monthOpen ? "^" : "v"}</Text>
-            </Pressable>
-            {monthOpen ? (
-              <View style={[styles.dropdownMenu, styles.dropdownMenuScrollable, styles.holidayMonthMenu]}>
-                {monthOptions.map((option) => {
-                  const active = month === option.value;
-                  return (
-                    <Pressable
-                      key={option.value}
-                      onPress={() => {
-                        setMonth(option.value);
-                        setMonthOpen(false);
-                      }}
-                      style={[styles.dropdownItem, active && styles.dropdownItemActive]}
-                    >
-                      <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option.label}</Text>
-                      <Text style={[styles.dropdownItemMeta, active && styles.dropdownItemMetaActive]}>{option.value}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ) : null}
-          </View>
+  return (
+    <View style={styles.holidayScreen}>
+      <View style={styles.holidayHeroCard}>
+        <View style={styles.holidayHeroText}>
+          <Text style={styles.holidayHeroEyebrow}>SCHOOL CALENDAR</Text>
+          <Text style={[styles.holidayHeroTitle, isCompact && styles.holidayHeroTitleCompact]}>{panelTitle}</Text>
         </View>
+        <View style={styles.holidayHeroArtWrap}>
+          <Image source={bookIllustration} style={styles.holidayHeroArt} resizeMode="contain" />
+        </View>
+      </View>
+
+      <View style={styles.holidayControlCard}>
+        <Text style={styles.holidayFieldLabel}>MONTH</Text>
+        <Pressable
+          onPress={() => setMonthOpen((prev) => !prev)}
+          style={[styles.holidayMonthButton, monthOpen && styles.holidayMonthButtonActive]}
+        >
+          <Text style={[styles.holidayMonthButtonText, isCompact && styles.holidayMonthButtonTextCompact]}>{monthLabel}</Text>
+          <Feather name={monthOpen ? "chevron-up" : "chevron-down"} size={22} color="#5f6f86" />
+        </Pressable>
+        {monthOpen ? (
+          <View style={[styles.dropdownMenu, styles.dropdownMenuScrollable, styles.holidayMonthMenu]}>
+            {monthOptions.map((option) => {
+              const active = month === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => {
+                    setMonth(option.value);
+                    setMonthOpen(false);
+                  }}
+                  style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                >
+                  <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{option.label}</Text>
+                  <Text style={[styles.dropdownItemMeta, active && styles.dropdownItemMetaActive]}>{option.value}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         {!isStudent ? (
           <View style={styles.holidayTabSwitch}>
@@ -2752,25 +3240,47 @@ function HolidayCalendarPanel({ session }) {
               onPress={() => setActiveTab("holidays")}
               style={[styles.holidayTabButton, activeTab === "holidays" && styles.holidayTabButtonActive]}
             >
-              <Text style={[styles.holidayTabButtonText, activeTab === "holidays" && styles.holidayTabButtonTextActive]}>Holidays</Text>
+              <View style={styles.holidayTabButtonContent}>
+                <View style={[styles.holidayTabIconWrap, activeTab === "holidays" && styles.holidayTabIconWrapActive]}>
+                  <Feather name="calendar" size={16} color={activeTab === "holidays" ? "#fff" : "#64748b"} />
+                </View>
+                <Text style={[styles.holidayTabButtonText, activeTab === "holidays" && styles.holidayTabButtonTextActive]}>
+                  Holidays
+                </Text>
+              </View>
             </Pressable>
             <Pressable
               onPress={() => setActiveTab("leaveRequests")}
               style={[styles.holidayTabButton, activeTab === "leaveRequests" && styles.holidayTabButtonActive]}
             >
-              <Text style={[styles.holidayTabButtonText, activeTab === "leaveRequests" && styles.holidayTabButtonTextActive]}>
-                Leave Requests
-              </Text>
+              <View style={styles.holidayTabButtonContent}>
+                <View style={[styles.holidayTabIconWrap, activeTab === "leaveRequests" && styles.holidayTabIconWrapActive]}>
+                  <Feather name="file-text" size={16} color={activeTab === "leaveRequests" ? "#fff" : "#64748b"} />
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.holidayTabButtonText, activeTab === "leaveRequests" && styles.holidayTabButtonTextActive]}
+                >
+                  Leave Requests
+                </Text>
+              </View>
             </Pressable>
           </View>
         ) : null}
       </View>
 
-      {activeTab === "leaveRequests" && !isStudent ? (
-        <Notice tone="info" text="Pending leave requests ko yahin se approve ya reject karein. Month filter se selected month ke requests dikhेंगे." />
-      ) : (
-        <Notice tone="info" text="Holidays are managed by the school admin. Fridays are automatically marked as weekly off." />
-      )}
+      <View style={styles.holidayInfoCard}>
+        <View style={styles.holidayInfoIconWrap}>
+          <Feather name="info" size={18} color="#1458bf" />
+        </View>
+        <View style={styles.holidayInfoBody}>
+          <Text style={styles.holidayInfoTitle}>{panelInfoTitle}</Text>
+          <Text style={styles.holidayInfoSubtext}>{panelInfoSubtext}</Text>
+        </View>
+        <View style={styles.holidayInfoArtWrap}>
+          <Feather name="bell" size={22} color="#9cc5ff" />
+        </View>
+      </View>
 
       {error ? <Notice tone="error" text={error} /> : null}
       {loading ? <LoadingBlock label={activeTab === "leaveRequests" && !isStudent ? "Leave requests loading..." : "Holidays loading..."} /> : null}
@@ -2789,7 +3299,7 @@ function HolidayCalendarPanel({ session }) {
 
               return (
                 <View key={request.id} style={styles.leaveReviewCard}>
-                  <View style={styles.leaveReviewHeader}>
+                  <View style={[styles.leaveReviewHeader, isCompact && styles.leaveReviewHeaderStacked]}>
                     <View style={styles.rowBody}>
                       <Text style={styles.rowTitle}>{student.name || `Roll ${request.roll_no || "-"}`}</Text>
                       <Text style={styles.rowMeta}>
@@ -2803,18 +3313,28 @@ function HolidayCalendarPanel({ session }) {
                   </View>
 
                   {isPending ? (
-                    <View style={styles.leaveReviewActions}>
+                    <View style={[styles.leaveReviewActions, isCompact && styles.leaveReviewActionsStacked]}>
                       <Pressable
                         disabled={savingId === request.id}
                         onPress={() => reviewLeaveRequest(request.id, "approved")}
-                        style={[styles.leaveReviewButton, styles.leaveReviewApprove, savingId === request.id && styles.disabledButton]}
+                        style={[
+                          styles.leaveReviewButton,
+                          isCompact && styles.leaveReviewButtonStacked,
+                          styles.leaveReviewApprove,
+                          savingId === request.id && styles.disabledButton,
+                        ]}
                       >
                         <Text style={styles.leaveReviewButtonText}>Approve</Text>
                       </Pressable>
                       <Pressable
                         disabled={savingId === request.id}
                         onPress={() => reviewLeaveRequest(request.id, "rejected")}
-                        style={[styles.leaveReviewButton, styles.leaveReviewReject, savingId === request.id && styles.disabledButton]}
+                        style={[
+                          styles.leaveReviewButton,
+                          isCompact && styles.leaveReviewButtonStacked,
+                          styles.leaveReviewReject,
+                          savingId === request.id && styles.disabledButton,
+                        ]}
                       >
                         <Text style={styles.leaveReviewButtonText}>Reject</Text>
                       </Pressable>
@@ -2836,20 +3356,34 @@ function HolidayCalendarPanel({ session }) {
       {!loading && (activeTab === "holidays" || isStudent) ? (
         holidays.length ? (
           <View style={styles.list}>
-            {holidays.map((holiday) => {
+            {holidays.map((holiday, index) => {
               const startDate = holiday.start_date || holiday.holiday_date;
               const endDate = holiday.end_date || holiday.holiday_date;
               const dateText =
                 startDate === endDate ? formatDisplayDate(startDate) : `${formatDisplayDate(startDate)} to ${formatDisplayDate(endDate)}`;
+              const badgeParts = getHolidayBadgeParts(startDate);
+              const decorIcon = getHolidayDecorIcon(index, holiday.type);
+              const chipText = holiday.type === "weekly" ? "Friday" : "Admin";
               return (
-                <View key={holiday.id || `${startDate}-${holiday.title}`} style={styles.holidayCard}>
-                  <View style={styles.rowBody}>
-                    <Text style={styles.rowTitle}>{holiday.title || "Holiday"}</Text>
-                    <Text style={styles.rowMeta}>{dateText}</Text>
-                    {holiday.description ? <Text style={styles.rowSub}>{holiday.description}</Text> : null}
+                <View key={holiday.id || `${startDate}-${holiday.title}`} style={styles.holidayItemCard}>
+                  <View style={styles.holidayDateBadge}>
+                    <Text style={styles.holidayDateWeekday}>{badgeParts.weekday}</Text>
+                    <Text style={styles.holidayDateDay}>{badgeParts.day}</Text>
+                    <Text style={styles.holidayDateMonth}>{badgeParts.month}</Text>
                   </View>
-                  <View style={styles.holidayTypePill}>
-                    <Text style={styles.holidayTypeText}>{holiday.type === "weekly" ? "Friday" : "Admin"}</Text>
+                  <View style={styles.holidayItemDivider} />
+                  <View style={styles.holidayItemBody}>
+                    <Text style={styles.holidayItemTitle}>{holiday.title || "Holiday"}</Text>
+                    <Text style={styles.holidayItemDate}>{dateText}</Text>
+                    <Text style={styles.holidayItemSub}>{holiday.description || "Weekly Friday holiday"}</Text>
+                  </View>
+                  <View style={styles.holidayItemMeta}>
+                    <View style={styles.holidayTypeChip}>
+                      <Text style={styles.holidayTypeText}>{chipText}</Text>
+                    </View>
+                    <View style={styles.holidayIconTile}>
+                      <Feather name={decorIcon} size={24} color="#1458bf" />
+                    </View>
                   </View>
                 </View>
               );
@@ -2992,10 +3526,18 @@ function StudentDropdown({ selectedStudentId, students, onSelect }) {
 }
 
 function MetricCard({ label, value, tone }) {
+  const iconName = getMetricIconName(label);
+  const iconColor = getMetricIconColor(tone);
+
   return (
     <View style={[styles.metricCard, styles[`metric_${tone}`]]}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
+      <View style={styles.metricIconWrap}>
+        <Feather name={iconName} size={20} color={iconColor} />
+      </View>
+      <View style={styles.metricBody}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -3019,10 +3561,16 @@ function SegmentButton({ active, label, onPress }) {
 
 function Notice({ tone, text }) {
   const toneStyle = tone === "error" ? styles.noticeError : tone === "success" ? styles.noticeSuccess : styles.noticeInfo;
+  const textStyle = tone === "error" ? styles.noticeTextError : tone === "success" ? styles.noticeTextSuccess : styles.noticeTextInfo;
+  const iconName = getNoticeIconName(tone);
+  const iconColor = tone === "error" ? "#9f2f21" : tone === "success" ? "#166534" : "#1458bf";
 
   return (
     <View style={[styles.notice, toneStyle]}>
-      <Text style={styles.noticeText}>{text}</Text>
+      <View style={styles.noticeContentRow}>
+        <Feather name={iconName} size={18} color={iconColor} />
+        <Text style={[styles.noticeText, textStyle]}>{text}</Text>
+      </View>
     </View>
   );
 }
@@ -3090,6 +3638,62 @@ const getInitials = (name = "") =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("") || "ST";
+
+const getMetricIconName = (label = "") => {
+  const normalized = String(label || "").toLowerCase();
+  if (normalized.includes("attendance")) return "pie-chart";
+  if (normalized.includes("present")) return "user-check";
+  if (normalized.includes("absent")) return "user-x";
+  if (normalized.includes("late")) return "clock";
+  if (normalized.includes("check in")) return "log-in";
+  if (normalized.includes("check out")) return "log-out";
+  if (normalized.includes("work")) return "clock";
+  if (normalized.includes("distance")) return "map-pin";
+  if (normalized.includes("leave")) return "file-text";
+  if (normalized.includes("working")) return "calendar";
+  if (normalized.includes("record")) return "layers";
+  if (normalized.includes("obtained")) return "check-circle";
+  if (normalized.includes("percent")) return "percent";
+  if (normalized.includes("division")) return "shield";
+  if (normalized.includes("total")) return "bar-chart-2";
+  if (normalized.includes("students")) return "users";
+  return "grid";
+};
+
+const getMetricIconColor = (tone = "") =>
+  ({
+    teal: "#1458bf",
+    green: "#16a34a",
+    red: "#ef4444",
+    amber: "#f59e0b",
+  }[tone] || "#1458bf");
+
+const getNoticeIconName = (tone = "info") =>
+  tone === "error" ? "alert-circle" : tone === "success" ? "check-circle" : "info";
+
+const HOLIDAY_DECOR_ICONS = ["umbrella", "sun", "glasses", "camera"];
+
+const getHolidayBadgeParts = (dateValue) => {
+  const parsed = new Date(dateValue);
+  if (Number.isNaN(parsed.getTime())) {
+    return { weekday: "--", day: "--", month: "---" };
+  }
+
+  return {
+    weekday: parsed
+      .toLocaleDateString("en-US", { weekday: "short" })
+      .toUpperCase(),
+    day: parsed.toLocaleDateString("en-US", { day: "2-digit" }),
+    month: parsed
+      .toLocaleDateString("en-US", { month: "short" })
+      .toUpperCase(),
+  };
+};
+
+const getHolidayDecorIcon = (index = 0, type = "") =>
+  String(type || "").toLowerCase() === "weekly"
+    ? HOLIDAY_DECOR_ICONS[index % HOLIDAY_DECOR_ICONS.length]
+    : "calendar";
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -3251,23 +3855,28 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   inputLabel: {
-    color: "#344054",
-    fontSize: 12,
+    color: "#0d2f68",
+    fontSize: 11,
     fontWeight: "900",
-    marginBottom: 8,
+    letterSpacing: 0.3,
+    marginBottom: 7,
     marginTop: 10,
     textTransform: "uppercase",
   },
   input: {
-    backgroundColor: "#fbfcfd",
-    borderColor: "#d4d9df",
-    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderColor: "#dde6f2",
+    borderRadius: 16,
     borderWidth: 1,
     color: "#17202a",
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
-    minHeight: 48,
-    paddingHorizontal: 13,
+    minHeight: 54,
+    paddingHorizontal: 15,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
   },
   helperText: {
     color: "#5b6470",
@@ -3282,47 +3891,48 @@ const styles = StyleSheet.create({
   },
   dropdownWrap: {
     position: "relative",
-    zIndex: 10,
+    zIndex: 30,
   },
   dropdownButton: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingRight: 12,
+    paddingRight: 14,
   },
   dropdownButtonActive: {
-    borderColor: "#1d4ed8",
+    borderColor: "#1458bf",
   },
   dropdownButtonText: {
     color: "#17202a",
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
     paddingRight: 10,
   },
   dropdownChevron: {
-    color: "#667085",
+    color: "#6c7d97",
     fontSize: 14,
     fontWeight: "900",
   },
   dropdownMenu: {
     backgroundColor: "#fff",
-    borderColor: "#d4d9df",
-    borderRadius: 10,
+    borderColor: "#dde6f2",
+    borderRadius: 18,
     borderWidth: 1,
-    elevation: 6,
+    elevation: 8,
     marginTop: 6,
     overflow: "hidden",
-    shadowColor: "#0f172a",
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
   },
   dropdownItem: {
-    paddingHorizontal: 13,
-    paddingVertical: 11,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   dropdownItemActive: {
-    backgroundColor: "#eef4ff",
+    backgroundColor: "#edf4ff",
   },
   dropdownItemText: {
     color: "#17202a",
@@ -3346,24 +3956,28 @@ const styles = StyleSheet.create({
   },
   studentAccordionCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 14,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginTop: 2,
     overflow: "hidden",
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
   },
   studentAccordionHeader: {
     alignItems: "center",
-    backgroundColor: "#fbfcfe",
+    backgroundColor: "#ffffff",
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 56,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    minHeight: 58,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   studentAccordionHeaderActive: {
-    backgroundColor: "#f3f7ff",
-    borderBottomColor: "#dbe4f0",
+    backgroundColor: "#f7faff",
+    borderBottomColor: "#e3ebf5",
     borderBottomWidth: 1,
   },
   studentAccordionBody: {
@@ -3412,12 +4026,16 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   dashboardCard: {
-    backgroundColor: "#f7f9fc",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    backgroundColor: "#ffffff",
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginTop: 10,
-    padding: 14,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
   },
   dashboardHint: {
     color: "#667085",
@@ -3433,18 +4051,18 @@ const styles = StyleSheet.create({
   monthBreakdownItem: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 14,
+    borderColor: "#e3ebf5",
+    borderRadius: 18,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
   },
   monthBreakdownItemActive: {
-    backgroundColor: "#eef4ff",
-    borderColor: "#1d4ed8",
+    backgroundColor: "#edf4ff",
+    borderColor: "#1458bf",
   },
   monthBreakdownTitle: {
     color: "#17202a",
@@ -3472,17 +4090,17 @@ const styles = StyleSheet.create({
   dashboardFilterButton: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
+    borderColor: "#dfe7f2",
     borderRadius: 999,
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 38,
+    minHeight: 42,
     paddingHorizontal: 10,
   },
   dashboardFilterButtonActive: {
-    backgroundColor: "#eef4ff",
-    borderColor: "#1d4ed8",
+    backgroundColor: "#edf4ff",
+    borderColor: "#1458bf",
   },
   dashboardFilterText: {
     color: "#52606d",
@@ -3505,16 +4123,71 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: "#0f5f63",
-    borderRadius: 8,
+    backgroundColor: "#1458bf",
+    borderRadius: 18,
     justifyContent: "center",
     marginTop: 16,
-    minHeight: 50,
+    minHeight: 56,
+    shadowColor: "#1458bf",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
   },
   disabledButton: {
     opacity: 0.55,
   },
   primaryButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  buttonContentRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+  },
+  inlineTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 2,
+  },
+  actionButtonRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 14,
+  },
+  actionButton: {
+    alignItems: "center",
+    borderRadius: 18,
+    flex: 1,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    minHeight: 56,
+    paddingHorizontal: 14,
+  },
+  actionButtonSoft: {
+    backgroundColor: "#edf4ff",
+    borderColor: "#c9daf7",
+    borderWidth: 1,
+  },
+  actionButtonPrimary: {
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
+    borderWidth: 1,
+    shadowColor: "#1458bf",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+  },
+  actionButtonText: {
+    color: "#1458bf",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  actionButtonTextPrimary: {
     color: "#fff",
     fontSize: 15,
     fontWeight: "900",
@@ -3576,13 +4249,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 2,
     height: 42,
+    overflow: "hidden",
     justifyContent: "center",
     width: 42,
   },
-  profileAvatarText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "900",
+  profileAvatarImage: {
+    height: "100%",
+    width: "100%",
   },
   roleBadge: {
     backgroundColor: "#fff8e8",
@@ -3670,13 +4343,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f5f63",
     borderRadius: 20,
     height: 68,
+    overflow: "hidden",
     justifyContent: "center",
     width: 68,
   },
-  profileHeroAvatarText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "900",
+  profileHeroAvatarImage: {
+    height: "100%",
+    width: "100%",
   },
   profileHeroText: {
     flex: 1,
@@ -3833,6 +4506,179 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
+  profileMenuCard: {
+    backgroundColor: "#fff",
+    borderColor: "#dbe3eb",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12,
+  },
+  profileMenuTitle: {
+    color: "#0f5f63",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    textTransform: "uppercase",
+  },
+  profileMenuGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  profileMenuButton: {
+    alignItems: "center",
+    backgroundColor: "#eef5ff",
+    borderColor: "#d8e6fb",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexGrow: 1,
+    minWidth: "30%",
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  profileMenuButtonText: {
+    color: "#174ea6",
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  legalShell: {
+    backgroundColor: "#eef4fb",
+    flexGrow: 1,
+    padding: 16,
+  },
+  legalCard: {
+    backgroundColor: "#fff",
+    borderColor: "#d8e3ef",
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 16,
+  },
+  legalHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  legalBackButton: {
+    alignItems: "center",
+    backgroundColor: "#0f5f63",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  legalBackButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  legalHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  legalKicker: {
+    color: "#9a6c1c",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  legalTitle: {
+    color: "#152238",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  legalIntro: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginTop: 14,
+  },
+  legalPoints: {
+    gap: 10,
+    marginTop: 14,
+  },
+  legalPointRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  legalPointBullet: {
+    color: "#0f5f63",
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 20,
+    width: 14,
+  },
+  legalPointText: {
+    color: "#1f2937",
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+  legalContactCard: {
+    backgroundColor: "#f7fbff",
+    borderColor: "#dce8f4",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 16,
+    padding: 14,
+  },
+  legalSectionTitle: {
+    color: "#0f5f63",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  legalContactText: {
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  legalButtonRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 14,
+  },
+  legalActionButton: {
+    alignItems: "center",
+    backgroundColor: "#eef5ff",
+    borderColor: "#d7e4f6",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexGrow: 1,
+    minWidth: "30%",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  legalActionButtonText: {
+    color: "#174ea6",
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  legalFooterCard: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e5ebf2",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 14,
+    padding: 12,
+  },
+  legalFooterText: {
+    color: "#5b6572",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
   content: {
     padding: 16,
     paddingBottom: 180,
@@ -3973,15 +4819,18 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   heroPanel: {
-    backgroundColor: "#0f172a",
-    borderRadius: 18,
+    backgroundColor: "#08377e",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#0d4ca9",
     marginBottom: 14,
-    padding: 18,
-    shadowColor: "#0f172a",
+    overflow: "hidden",
+    padding: 20,
+    shadowColor: "#08377e",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
-    shadowRadius: 16,
-    elevation: 5,
+    shadowRadius: 18,
+    elevation: 6,
   },
   heroBrandRow: {
     alignItems: "center",
@@ -3990,39 +4839,42 @@ const styles = StyleSheet.create({
   },
   heroLogoWrap: {
     alignItems: "center",
-    backgroundColor: "#dbeafe",
-    borderRadius: 14,
-    height: 48,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    height: 52,
     justifyContent: "center",
-    width: 48,
+    width: 52,
   },
   heroLogo: {
-    height: 42,
-    width: 42,
+    height: 44,
+    width: 44,
   },
   panelEyebrow: {
-    color: "#fbbf24",
+    color: "#ffd15c",
     fontSize: 11,
     fontWeight: "900",
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   panelSubEyebrow: {
-    color: "#cbd5e1",
+    color: "#dbe7ff",
     fontSize: 12,
     fontWeight: "800",
     marginTop: 2,
   },
   panelTitle: {
     color: "#fff",
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "900",
+    lineHeight: 28,
     marginTop: 14,
   },
   panelMeta: {
-    color: "#cbd5e1",
-    fontSize: 13,
+    color: "#dbe7ff",
+    fontSize: 12,
     fontWeight: "800",
-    marginTop: 4,
+    lineHeight: 18,
+    marginTop: 6,
   },
   metricGrid: {
     flexDirection: "row",
@@ -4033,34 +4885,56 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   metricCard: {
-    borderRadius: 8,
-    minHeight: 86,
-    padding: 14,
+    alignItems: "center",
+    borderColor: "#edf2fa",
+    flexDirection: "row",
+    borderRadius: 22,
+    borderWidth: 1,
+    gap: 12,
+    minHeight: 102,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
     width: "48%",
   },
   metric_teal: {
-    backgroundColor: "#e0f2fe",
+    backgroundColor: "#edf4ff",
   },
   metric_green: {
-    backgroundColor: "#dcfce7",
+    backgroundColor: "#ecfbf1",
   },
   metric_red: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: "#fff1f0",
   },
   metric_amber: {
-    backgroundColor: "#fef3c7",
+    backgroundColor: "#fff7e5",
   },
   metricLabel: {
-    color: "#334155",
-    fontSize: 12,
+    color: "#5f6f86",
+    fontSize: 11,
     fontWeight: "900",
+    letterSpacing: 0.3,
     textTransform: "uppercase",
   },
   metricValue: {
-    color: "#0f172a",
-    fontSize: 25,
+    color: "#0b2f63",
+    fontSize: 23,
     fontWeight: "900",
-    marginTop: 8,
+    marginTop: 10,
+  },
+  metricIconWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.66)",
+    borderRadius: 999,
+    height: 48,
+    justifyContent: "center",
+    width: 48,
+  },
+  metricBody: {
+    flex: 1,
+    justifyContent: "center",
   },
   featureSection: {
     marginTop: 18,
@@ -4071,13 +4945,17 @@ const styles = StyleSheet.create({
   featureCard: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
-    minHeight: 72,
-    padding: 12,
+    minHeight: 78,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 16,
   },
   featureIcon: {
     alignItems: "center",
@@ -4112,23 +4990,27 @@ const styles = StyleSheet.create({
   rowCard: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   avatar: {
     alignItems: "center",
-    backgroundColor: "#1e293b",
-    borderRadius: 14,
-    height: 42,
+    backgroundColor: "#edf4ff",
+    borderRadius: 16,
+    height: 48,
     justifyContent: "center",
-    width: 42,
+    width: 48,
   },
   avatarText: {
-    color: "#fff",
+    color: "#1458bf",
     fontSize: 13,
     fontWeight: "900",
   },
@@ -4176,15 +5058,278 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
   },
+  holidayScreen: {
+    gap: 14,
+  },
+  holidayHeroCard: {
+    alignItems: "center",
+    backgroundColor: "#f6f9ff",
+    borderColor: "#dbe5f2",
+    borderRadius: 28,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 14,
+    minHeight: 132,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+  },
+  holidayHeroText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  holidayHeroEyebrow: {
+    color: "#6b7a91",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  holidayHeroTitle: {
+    color: "#15294f",
+    fontSize: 33,
+    fontWeight: "900",
+    lineHeight: 40,
+  },
+  holidayHeroTitleCompact: {
+    fontSize: 28,
+    lineHeight: 34,
+  },
+  holidayHeroArtWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.86)",
+    borderRadius: 24,
+    justifyContent: "center",
+    minHeight: 96,
+    minWidth: 96,
+    padding: 10,
+  },
+  holidayHeroArt: {
+    height: 82,
+    width: 82,
+  },
+  holidayControlCard: {
+    backgroundColor: "#fff",
+    borderColor: "#dbe5f2",
+    borderRadius: 34,
+    borderWidth: 1,
+    gap: 12,
+    padding: 18,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.04,
+    shadowRadius: 18,
+  },
+  holidayFieldLabel: {
+    color: "#6b7a91",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.7,
+    textTransform: "uppercase",
+  },
+  holidayMonthButton: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#d6e0ef",
+    borderRadius: 24,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 64,
+    paddingHorizontal: 18,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+  },
+  holidayMonthButtonActive: {
+    borderColor: "#bcd0f4",
+  },
+  holidayMonthButtonText: {
+    color: "#15294f",
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "900",
+    paddingRight: 12,
+  },
+  holidayMonthButtonTextCompact: {
+    fontSize: 17,
+  },
+  holidayTabButtonContent: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+  },
+  holidayTabIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#eef4ff",
+    borderRadius: 12,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
+  holidayTabIconWrapActive: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  holidayInfoCard: {
+    alignItems: "center",
+    backgroundColor: "#f7fbff",
+    borderColor: "#cfe0f7",
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 14,
+    minHeight: 86,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.03,
+    shadowRadius: 14,
+  },
+  holidayInfoIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#ddebff",
+    borderRadius: 999,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  holidayInfoBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  holidayInfoTitle: {
+    color: "#1f2f4d",
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 21,
+  },
+  holidayInfoSubtext: {
+    color: "#52606d",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  holidayInfoArtWrap: {
+    alignItems: "center",
+    backgroundColor: "#eef4ff",
+    borderRadius: 999,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  holidayItemCard: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#dbe4f3",
+    borderRadius: 28,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 14,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+  },
+  holidayDateBadge: {
+    alignItems: "center",
+    backgroundColor: "#f3f7fd",
+    borderRadius: 20,
+    justifyContent: "center",
+    minHeight: 112,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    width: 86,
+  },
+  holidayDateWeekday: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+  },
+  holidayDateDay: {
+    color: "#15294f",
+    fontSize: 34,
+    fontWeight: "900",
+    lineHeight: 38,
+    marginTop: 2,
+  },
+  holidayDateMonth: {
+    color: "#6b7a91",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+    marginTop: 1,
+  },
+  holidayItemDivider: {
+    alignSelf: "stretch",
+    backgroundColor: "#dbe5f2",
+    borderRadius: 999,
+    width: 1,
+  },
+  holidayItemBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  holidayItemTitle: {
+    color: "#15294f",
+    fontSize: 19,
+    fontWeight: "900",
+    lineHeight: 24,
+  },
+  holidayItemDate: {
+    color: "#1458bf",
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  holidayItemSub: {
+    color: "#667085",
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  holidayItemMeta: {
+    alignItems: "center",
+    gap: 10,
+    justifyContent: "center",
+  },
+  holidayTypeChip: {
+    backgroundColor: "#eef4ff",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  holidayIconTile: {
+    alignItems: "center",
+    backgroundColor: "#eff4ff",
+    borderRadius: 22,
+    height: 60,
+    justifyContent: "center",
+    width: 60,
+  },
   holidayCard: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   holidayPill: {
     alignItems: "center",
@@ -4215,48 +5360,80 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 10,
   },
+  holidayToolbarStacked: {
+    flexDirection: "column",
+  },
   holidayMonthField: {
     flex: 1,
+  },
+  holidayMonthFieldStacked: {
+    width: "100%",
+  },
+  holidayMonthFieldOpen: {
+    paddingBottom: 0,
   },
   holidayTabSwitch: {
     flexDirection: "row",
     gap: 8,
     flex: 1,
   },
+  holidayTabSwitchStacked: {
+    flexDirection: "row",
+    width: "100%",
+  },
   holidayTabButton: {
     alignItems: "center",
     backgroundColor: "#f3f4f6",
     borderColor: "#dbe4f0",
-    borderRadius: 999,
+    borderRadius: 20,
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 44,
+    minHeight: 56,
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 12,
+  },
+  holidayTabButtonCompact: {
+    borderRadius: 16,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   holidayTabButtonActive: {
-    backgroundColor: "#0f5f63",
-    borderColor: "#0b474a",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
+    shadowColor: "#1458bf",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 3,
   },
   holidayTabButtonText: {
     color: "#52606d",
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "900",
+  },
+  holidayTabButtonTextCompact: {
+    fontSize: 11,
+    letterSpacing: 0.1,
   },
   holidayTabButtonTextActive: {
     color: "#fff",
   },
   holidayMonthMenu: {
-    marginTop: 8,
+    marginTop: 10,
   },
   leaveReviewCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     gap: 12,
-    padding: 12,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   leaveReviewHeader: {
     alignItems: "flex-start",
@@ -4264,9 +5441,15 @@ const styles = StyleSheet.create({
     gap: 10,
     justifyContent: "space-between",
   },
+  leaveReviewHeaderStacked: {
+    flexDirection: "column",
+  },
   leaveReviewActions: {
     flexDirection: "row",
     gap: 10,
+  },
+  leaveReviewActionsStacked: {
+    flexDirection: "column",
   },
   leaveReviewButton: {
     alignItems: "center",
@@ -4276,6 +5459,10 @@ const styles = StyleSheet.create({
     minHeight: 42,
     paddingHorizontal: 12,
     paddingVertical: 10,
+  },
+  leaveReviewButtonStacked: {
+    flex: 0,
+    width: "100%",
   },
   leaveReviewApprove: {
     backgroundColor: "#0f766e",
@@ -4321,8 +5508,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   terminalButtonActive: {
-    backgroundColor: "#1d4ed8",
-    borderColor: "#1d4ed8",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
   },
   terminalButtonLocked: {
     backgroundColor: "#f8fafc",
@@ -4364,8 +5551,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   studentChipActive: {
-    backgroundColor: "#0f172a",
-    borderColor: "#0f172a",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
   },
   studentChipTitle: {
     color: "#17202a",
@@ -4383,22 +5570,30 @@ const styles = StyleSheet.create({
   },
   attendanceCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginBottom: 10,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   attendanceHeader: {
     marginBottom: 10,
   },
   marksCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginBottom: 10,
-    padding: 12,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   marksHeader: {
     marginBottom: 10,
@@ -4470,14 +5665,18 @@ const styles = StyleSheet.create({
   },
   statusButton: {
     alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderColor: "#dfe7f2",
+    borderRadius: 16,
+    borderWidth: 1,
     flex: 1,
     justifyContent: "center",
-    minHeight: 40,
+    minHeight: 44,
+    paddingHorizontal: 8,
   },
   statusButtonActive: {
-    backgroundColor: "#1d4ed8",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
   },
   statusText: {
     color: "#52606d",
@@ -4490,16 +5689,20 @@ const styles = StyleSheet.create({
   recordRow: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 14,
+    borderColor: "#e3ebf5",
+    borderRadius: 20,
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   recordRowActive: {
-    backgroundColor: "#eef4ff",
-    borderColor: "#1d4ed8",
+    backgroundColor: "#edf4ff",
+    borderColor: "#1458bf",
   },
   statusPill: {
     borderRadius: 8,
@@ -4533,33 +5736,57 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
   notice: {
-    borderRadius: 8,
+    borderRadius: 20,
+    borderWidth: 1,
     marginBottom: 12,
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
   },
   noticeError: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: "#fff3f1",
+    borderColor: "#f4c2ba",
   },
   noticeInfo: {
-    backgroundColor: "#dbeafe",
+    backgroundColor: "#eef7ff",
+    borderColor: "#c9defa",
   },
   noticeSuccess: {
-    backgroundColor: "#dcfce7",
-    borderColor: "#86efac",
-    borderWidth: 1,
+    backgroundColor: "#effcf3",
+    borderColor: "#a6e4b9",
   },
   noticeText: {
-    color: "#17202a",
     fontSize: 13,
     fontWeight: "800",
+  },
+  noticeTextError: {
+    color: "#9f2f21",
+  },
+  noticeTextInfo: {
+    color: "#17305d",
+  },
+  noticeTextSuccess: {
+    color: "#166534",
+  },
+  noticeContentRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
   },
   emptyState: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 22,
+    padding: 24,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   emptyTitle: {
     color: "#17202a",
@@ -4573,4 +5800,1433 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: "center",
   },
+  portalShell: {
+    flex: 1,
+    backgroundColor: "#07366f",
+  },
+  portalContent: {
+    alignItems: "center",
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  portalFrame: {
+    alignSelf: "center",
+    backgroundColor: "#07366f",
+    flex: 1,
+    maxWidth: 430,
+    minHeight: 812,
+    overflow: "hidden",
+    position: "relative",
+    width: "100%",
+  },
+  portalPhotoLayer: {
+    backgroundColor: "#dceefa",
+    borderBottomLeftRadius: 34,
+    borderBottomRightRadius: 34,
+    height: 202,
+    left: 0,
+    opacity: 0.96,
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  portalWhiteSheet: {
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderBottomLeftRadius: 76,
+    borderBottomRightRadius: 76,
+    borderTopLeftRadius: 260,
+    borderTopRightRadius: 260,
+    bottom: 96,
+    left: -54,
+    position: "absolute",
+    right: -54,
+    top: 158,
+  },
+  portalGoldArc: {
+    borderColor: "#efc44d",
+    borderRadius: 270,
+    borderWidth: 3,
+    bottom: 86,
+    height: 560,
+    left: -86,
+    opacity: 0.78,
+    position: "absolute",
+    right: -86,
+  },
+  portalHero: {
+    alignItems: "center",
+    paddingBottom: 8,
+    paddingHorizontal: 28,
+    paddingTop: 44,
+    zIndex: 2,
+  },
+  portalLogoWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  portalLogoGlow: {
+    backgroundColor: "rgba(255,255,255,0.58)",
+    borderRadius: 999,
+    height: 134,
+    position: "absolute",
+    width: 134,
+  },
+  portalLogoRing: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#efc44d",
+    borderRadius: 999,
+    borderWidth: 2,
+    elevation: 6,
+    height: 112,
+    justifyContent: "center",
+    shadowColor: "#d69c18",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    width: 112,
+  },
+  portalLogoImage: {
+    height: 100,
+    width: 100,
+  },
+  portalEyebrowRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+  },
+  portalTinyLine: {
+    backgroundColor: "#d9a62e",
+    borderRadius: 999,
+    height: 1.5,
+    width: 26,
+  },
+  portalEyebrow: {
+    color: "#1458bf",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase",
+  },
+  portalTitle: {
+    color: "#092d66",
+    fontSize: 29,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 32,
+    marginTop: 5,
+    textAlign: "center",
+  },
+  portalSubtitle: {
+    color: "#56657f",
+    fontSize: 13.5,
+    fontWeight: "700",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  portalDivider: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 7,
+  },
+  portalDividerLine: {
+    backgroundColor: "#d9a62e",
+    borderRadius: 999,
+    height: 1.5,
+    width: 42,
+  },
+  portalDividerStar: {
+    color: "#d9a62e",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  portalFeatureRow: {
+    flexDirection: "row",
+    gap: 14,
+    marginTop: 14,
+    width: "100%",
+  },
+  portalFeatureCard: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#e0e7f1",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 3,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 82,
+    paddingHorizontal: 6,
+    paddingVertical: 10,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+  },
+  portalFeatureIcon: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  portalFeatureIconBlue: {
+    backgroundColor: "#eaf1ff",
+  },
+  portalFeatureIconGreen: {
+    backgroundColor: "#e9f8ef",
+  },
+  portalFeatureIconGold: {
+    backgroundColor: "#fff2df",
+  },
+  portalFeatureIconText: {
+    color: "#1458bf",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  portalFeatureTitle: {
+    color: "#092d66",
+    fontSize: 13.5,
+    fontWeight: "900",
+    marginTop: 5,
+    textAlign: "center",
+  },
+  portalFeatureText: {
+    color: "#65758d",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  portalSegment: {
+    alignSelf: "center",
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderColor: "#e4ebf3",
+    borderRadius: 22,
+    borderWidth: 1,
+    elevation: 4,
+    flexDirection: "row",
+    height: 42,
+    marginTop: 8,
+    padding: 4,
+    position: "relative",
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    width: "86%",
+    zIndex: 3,
+  },
+  portalSegmentThumb: {
+    backgroundColor: "#073b82",
+    borderRadius: 18,
+    bottom: 4,
+    left: 4,
+    position: "absolute",
+    top: 4,
+    width: "50%",
+  },
+  portalSegmentThumbRight: {
+    left: "50%",
+  },
+  portalSegmentButton: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  portalSegmentText: {
+    color: "#092d66",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  portalSegmentTextActive: {
+    color: "#fff",
+  },
+  portalFormCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    elevation: 4,
+    marginHorizontal: 28,
+    marginTop: 9,
+    paddingBottom: 13,
+    paddingHorizontal: 20,
+    paddingTop: 13,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    zIndex: 2,
+  },
+  portalFormTitle: {
+    color: "#092d66",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textAlign: "center",
+  },
+  portalFormSubtitle: {
+    color: "#607087",
+    fontSize: 12.5,
+    fontWeight: "700",
+    marginBottom: 6,
+    marginTop: 3,
+    textAlign: "center",
+  },
+  portalLabel: {
+    color: "#092d66",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0,
+    marginBottom: 5,
+    marginTop: 5,
+    textTransform: "uppercase",
+  },
+  portalInputShell: {
+    alignItems: "center",
+    backgroundColor: "#fbfdff",
+    borderColor: "#dbe4f0",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 46,
+    overflow: "hidden",
+  },
+  portalInputIcon: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: "#f1f6fb",
+    borderRightColor: "#e0e8f2",
+    borderRightWidth: 1,
+    justifyContent: "center",
+    width: 46,
+  },
+  portalInputIconText: {
+    color: "#0f4592",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  portalInput: {
+    color: "#10233f",
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  portalEyeButton: {
+    paddingHorizontal: 12,
+  },
+  portalEyeText: {
+    color: "#7a879a",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  portalHelperText: {
+    color: "#5b6470",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 15,
+    marginTop: 6,
+  },
+  portalErrorText: {
+    color: "#b42318",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 7,
+  },
+  portalOptionsRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 9,
+    marginTop: 10,
+  },
+  portalRememberRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  portalCheckBox: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#b8c6d8",
+    borderRadius: 5,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: "center",
+    width: 18,
+  },
+  portalCheckBoxActive: {
+    backgroundColor: "#073b82",
+    borderColor: "#073b82",
+  },
+  portalCheckText: {
+    color: "transparent",
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 11,
+  },
+  portalRememberText: {
+    color: "#65758d",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  portalForgotText: {
+    color: "#1458bf",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  portalConsentRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  portalConsentBox: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#b8c6d8",
+    borderRadius: 6,
+    borderWidth: 1.5,
+    height: 20,
+    justifyContent: "center",
+    width: 20,
+  },
+  portalConsentBoxActive: {
+    backgroundColor: "#073b82",
+    borderColor: "#073b82",
+  },
+  portalConsentCheck: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "900",
+    lineHeight: 11,
+  },
+  portalConsentText: {
+    color: "#304255",
+    flex: 1,
+    flexWrap: "wrap",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+  },
+  portalLegalLinksRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  portalLegalLinkButton: {
+    backgroundColor: "#edf3fb",
+    borderColor: "#d8e4f3",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexGrow: 1,
+    minWidth: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  portalLegalLinkText: {
+    color: "#124a9f",
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  portalLoginButton: {
+    alignItems: "center",
+    backgroundColor: "#073b82",
+    borderRadius: 999,
+    elevation: 5,
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 46,
+    shadowColor: "#073b82",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+  },
+  portalLoginText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  portalOrRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  portalOrLine: {
+    backgroundColor: "#e4c46b",
+    flex: 1,
+    height: 1,
+  },
+  portalOrBubble: {
+    alignItems: "center",
+    backgroundColor: "#fff7df",
+    borderRadius: 999,
+    height: 24,
+    justifyContent: "center",
+    width: 24,
+  },
+  portalOrText: {
+    color: "#6b7280",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  portalAdminButton: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#9db1d1",
+    borderRadius: 999,
+    borderWidth: 1.2,
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 40,
+  },
+  portalAdminText: {
+    color: "#0b397b",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  portalFooter: {
+    alignItems: "center",
+    bottom: 16,
+    left: 24,
+    position: "absolute",
+    right: 24,
+    zIndex: 2,
+  },
+  portalFooterText: {
+    color: "#fff",
+    fontSize: 12.5,
+    fontWeight: "600",
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  portalFooterAuthor: {
+    color: "#efc44d",
+    fontSize: 12.5,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+  portalFrame: {
+    alignSelf: "center",
+    backgroundColor: "#07366f",
+    flex: 1,
+    maxWidth: 430,
+    minHeight: 780,
+    overflow: "hidden",
+    position: "relative",
+    width: "100%",
+  },
+  portalPhotoLayer: {
+    backgroundColor: "#dceefa",
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
+    height: 156,
+    left: 0,
+    opacity: 0.96,
+    overflow: "hidden",
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  portalPhotoImage: {
+    height: 300,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    width: "100%",
+  },
+  portalPhotoWash: {
+    backgroundColor: "rgba(255,255,255,0.35)",
+    flex: 1,
+    zIndex: 1,
+  },
+  portalWhiteSheet: {
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderBottomLeftRadius: 64,
+    borderBottomRightRadius: 64,
+    borderTopLeftRadius: 260,
+    borderTopRightRadius: 260,
+    bottom: 76,
+    left: -54,
+    position: "absolute",
+    right: -54,
+    top: 118,
+  },
+  portalGoldArc: {
+    borderColor: "#efc44d",
+    borderRadius: 270,
+    borderWidth: 2,
+    bottom: 68,
+    height: 470,
+    left: -86,
+    opacity: 0.78,
+    position: "absolute",
+    right: -86,
+  },
+  portalHero: {
+    alignItems: "center",
+    paddingBottom: 6,
+    paddingHorizontal: 34,
+    paddingTop: 32,
+    zIndex: 2,
+  },
+  portalLogoWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 7,
+  },
+  portalLogoGlow: {
+    backgroundColor: "rgba(255,255,255,0.58)",
+    borderRadius: 999,
+    height: 112,
+    position: "absolute",
+    width: 112,
+  },
+  portalLogoRing: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#efc44d",
+    borderRadius: 999,
+    borderWidth: 2,
+    elevation: 6,
+    height: 92,
+    justifyContent: "center",
+    shadowColor: "#d69c18",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    width: 92,
+  },
+  portalLogoImage: {
+    height: 82,
+    width: 82,
+  },
+  portalEyebrowRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+  },
+  portalTinyLine: {
+    backgroundColor: "#d9a62e",
+    borderRadius: 999,
+    height: 1.5,
+    width: 22,
+  },
+  portalEyebrow: {
+    color: "#1458bf",
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase",
+  },
+  portalTitle: {
+    color: "#092d66",
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: 0,
+    lineHeight: 27,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  portalSubtitle: {
+    color: "#56657f",
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  portalDivider: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 5,
+  },
+  portalDividerLine: {
+    backgroundColor: "#d9a62e",
+    borderRadius: 999,
+    height: 1,
+    width: 34,
+  },
+  portalDividerStar: {
+    color: "#d9a62e",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  portalFeatureRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 12,
+    width: "100%",
+  },
+  portalFeatureCard: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#e0e7f1",
+    borderRadius: 10,
+    borderWidth: 1,
+    elevation: 3,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 74,
+    paddingHorizontal: 5,
+    paddingVertical: 8,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+  },
+  portalFeatureIcon: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
+  portalFeatureIconText: {
+    color: "#1458bf",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  portalFeatureIconImage: {
+    height: 17,
+    width: 17,
+  },
+  portalFeatureIconImageBlue: {
+    tintColor: "#2a64e8",
+  },
+  portalFeatureIconImageGreen: {
+    tintColor: "#18a05e",
+  },
+  portalFeatureIconImageGold: {
+    tintColor: "#ff9d00",
+  },
+  portalFeatureTitle: {
+    color: "#092d66",
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  portalFeatureText: {
+    color: "#65758d",
+    fontSize: 8,
+    fontWeight: "700",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  portalSegment: {
+    alignSelf: "center",
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderColor: "#e4ebf3",
+    borderRadius: 10,
+    borderWidth: 1,
+    elevation: 4,
+    flexDirection: "row",
+    height: 32,
+    marginTop: 8,
+    padding: 3,
+    position: "relative",
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    width: "84%",
+    zIndex: 3,
+  },
+  portalSegmentThumb: {
+    backgroundColor: "#073b82",
+    borderRadius: 8,
+    bottom: 3,
+    left: 3,
+    position: "absolute",
+    top: 3,
+    width: "50%",
+  },
+  portalSegmentText: {
+    color: "#092d66",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  portalSegmentTextActive: {
+    color: "#fff",
+  },
+  portalFormCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    elevation: 4,
+    marginHorizontal: 34,
+    marginTop: 8,
+    paddingBottom: 11,
+    paddingHorizontal: 18,
+    paddingTop: 11,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    zIndex: 2,
+  },
+  portalFormTitle: {
+    color: "#092d66",
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textAlign: "center",
+  },
+  portalFormSubtitle: {
+    color: "#607087",
+    fontSize: 10,
+    fontWeight: "700",
+    marginBottom: 6,
+    marginTop: 2,
+    textAlign: "center",
+  },
+  portalLabel: {
+    color: "#092d66",
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 0,
+    marginBottom: 4,
+    marginTop: 5,
+    textTransform: "uppercase",
+  },
+  portalInputShell: {
+    alignItems: "center",
+    backgroundColor: "#fbfdff",
+    borderColor: "#dbe4f0",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 34,
+    overflow: "hidden",
+  },
+  portalInputIcon: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: "#f1f6fb",
+    borderRightColor: "#e0e8f2",
+    borderRightWidth: 1,
+    justifyContent: "center",
+    width: 34,
+  },
+  portalInputIconText: {
+    color: "#0f4592",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  portalInput: {
+    color: "#10233f",
+    flex: 1,
+    fontSize: 10,
+    fontWeight: "700",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  portalEyeButton: {
+    paddingHorizontal: 10,
+  },
+  portalEyeText: {
+    color: "#7a879a",
+    fontSize: 8,
+    fontWeight: "900",
+  },
+  portalHelperText: {
+    color: "#5b6470",
+    fontSize: 8,
+    fontWeight: "700",
+    lineHeight: 12,
+    marginTop: 6,
+  },
+  portalErrorText: {
+    color: "#b42318",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 7,
+  },
+  portalOptionsRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 7,
+    marginTop: 7,
+  },
+  portalRememberRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+  },
+  portalCheckBox: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#b8c6d8",
+    borderRadius: 4,
+    borderWidth: 1,
+    height: 13,
+    justifyContent: "center",
+    width: 13,
+  },
+  portalCheckBoxActive: {
+    backgroundColor: "#073b82",
+    borderColor: "#073b82",
+  },
+  portalCheckText: {
+    color: "transparent",
+    fontSize: 8,
+    fontWeight: "900",
+    lineHeight: 8,
+  },
+  portalRememberText: {
+    color: "#65758d",
+    fontSize: 8,
+    fontWeight: "700",
+  },
+  portalForgotText: {
+    color: "#1458bf",
+    fontSize: 8,
+    fontWeight: "800",
+  },
+  portalLoginButton: {
+    alignItems: "center",
+    backgroundColor: "#073b82",
+    borderRadius: 999,
+    elevation: 5,
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 34,
+    shadowColor: "#073b82",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+  },
+  portalLoginText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  portalOrRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 7,
+    marginTop: 7,
+  },
+  portalOrLine: {
+    backgroundColor: "#e4c46b",
+    flex: 1,
+    height: 1,
+  },
+  portalOrBubble: {
+    alignItems: "center",
+    backgroundColor: "#fff7df",
+    borderRadius: 999,
+    height: 18,
+    justifyContent: "center",
+    width: 18,
+  },
+  portalOrText: {
+    color: "#6b7280",
+    fontSize: 8,
+    fontWeight: "900",
+  },
+  portalAdminButton: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#9db1d1",
+    borderRadius: 999,
+    borderWidth: 1.2,
+    flexDirection: "row",
+    justifyContent: "center",
+    minHeight: 30,
+  },
+  portalAdminText: {
+    color: "#0b397b",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  portalFooter: {
+    alignItems: "center",
+    bottom: 9,
+    left: 34,
+    position: "absolute",
+    right: 34,
+    zIndex: 2,
+  },
+  portalFooterText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "600",
+    lineHeight: 13,
+    textAlign: "center",
+  },
+  portalFooterAuthor: {
+    color: "#efc44d",
+    fontSize: 9,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+  appShell: {
+    flex: 1,
+    backgroundColor: "#f7f9fd",
+  },
+  header: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderColor: "#e8eef7",
+    borderRadius: 14,
+    borderWidth: 1,
+    elevation: 4,
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "space-between",
+    marginHorizontal: 10,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+  },
+  headerBrandRow: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: 10,
+    minWidth: 0,
+  },
+  headerLogo: {
+    height: 48,
+    width: 48,
+  },
+  headerTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  headerSchool: {
+    color: "#092d66",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase",
+  },
+  headerTitle: {
+    color: "#30415d",
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  roleBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#fff4d6",
+    borderColor: "#f3c44d",
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  roleBadgeText: {
+    color: "#9a6500",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase",
+  },
+  headerActions: {
+    alignItems: "flex-end",
+    gap: 0,
+  },
+  dashboardLogoutButton: {
+    alignItems: "center",
+    backgroundColor: "#f8fbff",
+    borderColor: "#dbe7f5",
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 46,
+    minWidth: 48,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  dashboardLogoutIconText: {
+    color: "#0b75a0",
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 15,
+  },
+  dashboardLogoutText: {
+    color: "#0b75a0",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  content: {
+    padding: 10,
+    paddingBottom: 116,
+  },
+  sectionTabsWrap: {
+    borderBottomColor: "transparent",
+    borderBottomWidth: 0,
+    marginBottom: 10,
+    paddingBottom: 0,
+  },
+  sectionTabsBar: {
+    flexDirection: "row",
+    gap: 16,
+    paddingHorizontal: 2,
+  },
+  sectionTabButton: {
+    alignItems: "center",
+    borderBottomColor: "transparent",
+    borderBottomWidth: 2,
+    flexDirection: "row",
+    gap: 6,
+    paddingBottom: 7,
+    paddingHorizontal: 2,
+    paddingTop: 2,
+  },
+  sectionTabButtonActive: {
+    borderBottomColor: "#2f68ff",
+  },
+  sectionTabIcon: {
+    backgroundColor: "#092d66",
+    borderColor: "#092d66",
+    borderRadius: 3,
+    borderWidth: 1,
+    height: 13,
+    width: 13,
+  },
+  sectionTabText: {
+    color: "#4d5e78",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  sectionTabTextActive: {
+    color: "#092d66",
+  },
+  teacherHomeShell: {
+    gap: 12,
+  },
+  teacherClassCard: {
+    backgroundColor: "#08377e",
+    borderRadius: 12,
+    elevation: 4,
+    minHeight: 124,
+    overflow: "hidden",
+    padding: 12,
+    position: "relative",
+    shadowColor: "#08377e",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+  },
+  teacherClassTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 9,
+  },
+  teacherClassLogoWrap: {
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    height: 46,
+    justifyContent: "center",
+    width: 46,
+  },
+  teacherClassLogo: {
+    height: 40,
+    width: 40,
+  },
+  teacherClassTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teacherClassSchool: {
+    color: "#ffd15c",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textTransform: "uppercase",
+  },
+  teacherClassMeta: {
+    color: "#d9e8ff",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 2,
+  },
+  teacherClassTitle: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 18,
+  },
+  teacherClassYearRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 6,
+  },
+  teacherClassYear: {
+    color: "#d9e8ff",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  teacherClassArt: {
+    bottom: 8,
+    height: 92,
+    position: "absolute",
+    right: 6,
+    width: 150,
+  },
+  teacherClassArtImage: {
+    height: "100%",
+    width: "100%",
+  },
+  teacherStatsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  teacherStatCard: {
+    alignItems: "center",
+    borderRadius: 10,
+    flexDirection: "row",
+    flexBasis: "48%",
+    flexGrow: 1,
+    gap: 12,
+    minHeight: 82,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+  },
+  teacherStatBlue: {
+    backgroundColor: "#eaf3ff",
+  },
+  teacherStatGreen: {
+    backgroundColor: "#e9f9ef",
+  },
+  teacherStatRed: {
+    backgroundColor: "#fff0ef",
+  },
+  teacherStatAmber: {
+    backgroundColor: "#fff6df",
+  },
+  teacherStatIconWrap: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.66)",
+    borderRadius: 999,
+    height: 46,
+    justifyContent: "center",
+    width: 46,
+  },
+  teacherStatIcon: {
+    color: "#1d7fdb",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  teacherStatIconImage: {
+    height: 22,
+    width: 22,
+  },
+  teacherStatBody: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  teacherStatLabel: {
+    color: "#617089",
+    fontSize: 9,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  teacherStatValue: {
+    color: "#08377e",
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 26,
+    marginTop: 2,
+  },
+  teacherStatMeta: {
+    color: "#64748b",
+    fontSize: 9,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  teacherFeatureSection: {
+    marginTop: 2,
+  },
+  teacherSectionTitleWrap: {
+    alignSelf: "flex-start",
+    marginBottom: 8,
+  },
+  teacherSectionTitle: {
+    color: "#092d66",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  teacherSectionUnderline: {
+    backgroundColor: "#f2b02e",
+    borderRadius: 999,
+    height: 2,
+    marginTop: 2,
+    width: 42,
+  },
+  teacherFeatureList: {
+    backgroundColor: "#fff",
+    borderColor: "#e7eef7",
+    borderRadius: 12,
+    borderWidth: 1,
+    elevation: 3,
+    overflow: "hidden",
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+  },
+  teacherFeatureItem: {
+    alignItems: "center",
+    borderBottomColor: "#eef3f8",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 58,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  teacherFeatureIcon: {
+    alignItems: "center",
+    backgroundColor: "#eef5ff",
+    borderRadius: 8,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  teacherFeatureIconText: {
+    color: "#2457d6",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  teacherFeatureIconImage: {
+    height: 17,
+    tintColor: "#2457d6",
+    width: 17,
+  },
+  teacherFeatureBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teacherFeatureTitle: {
+    color: "#092d66",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  teacherFeatureMeta: {
+    color: "#667085",
+    fontSize: 9,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  teacherFeatureChevron: {
+    color: "#667085",
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  tabDock: {
+    backgroundColor: "#fff",
+    borderColor: "#e7eef7",
+    borderRadius: 14,
+    borderWidth: 1,
+    bottom: 10,
+    elevation: 8,
+    left: 12,
+    paddingBottom: 7,
+    paddingTop: 7,
+    position: "absolute",
+    right: 12,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+  },
+  parentTabScroller: {
+    paddingHorizontal: 6,
+  },
+  parentTabBar: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  parentTabButton: {
+    alignItems: "center",
+    backgroundColor: "transparent",
+    borderColor: "transparent",
+    borderRadius: 10,
+    borderWidth: 0,
+    flex: 1,
+    flexBasis: 0,
+    justifyContent: "center",
+    minHeight: 46,
+    minWidth: 0,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  parentTabButtonActive: {
+    backgroundColor: "#0b4eb0",
+    elevation: 3,
+    shadowColor: "#0b4eb0",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2f6eff",
+  },
+  parentTabBadge: {
+    alignItems: "center",
+    backgroundColor: "transparent",
+    borderColor: "transparent",
+    borderRadius: 999,
+    borderWidth: 0,
+    height: 18,
+    justifyContent: "center",
+    marginBottom: 2,
+    width: 22,
+  },
+  parentTabBadgeActive: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  parentTabBadgeIcon: {
+    lineHeight: 16,
+  },
+  parentTabBadgeImage: {
+    height: 16,
+    width: 16,
+  },
+  parentTabBadgeText: {
+    color: "#63708a",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  parentTabBadgeTextActive: {
+    color: "#fff",
+  },
+  parentTabText: {
+    color: "#63708a",
+    fontSize: 9,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  parentTabTextActive: {
+    color: "#fff",
+  },
 });
+

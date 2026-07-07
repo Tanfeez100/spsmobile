@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Feather } from "@expo/vector-icons";
 import { formatDisplayDate } from "../../utils/date";
 import { getStudentResultAvailability, getStudentResultPublic } from "../../api/client";
 
@@ -159,7 +160,10 @@ export default function StudentResultsPanel({ student }) {
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>Results</Text>
+      <View style={styles.sectionTitleRow}>
+        <Feather name="bar-chart-2" size={18} color="#1458bf" />
+        <Text style={styles.sectionTitle}>Results</Text>
+      </View>
       <View style={styles.card}>
         <View style={styles.rowBody}>
           <Text style={styles.rowTitle}>{student?.name || "Student"}</Text>
@@ -229,7 +233,10 @@ export default function StudentResultsPanel({ student }) {
 
           {termRows.length ? (
             <View style={[styles.list, styles.topGap]}>
-              <Text style={styles.sectionTitle}>Term Summary</Text>
+              <View style={styles.sectionTitleRow}>
+                <Feather name="layers" size={18} color="#1458bf" />
+                <Text style={styles.sectionTitle}>Term Summary</Text>
+              </View>
               {termRows.map((row) => (
                 <View key={row.terminal} style={styles.recordRow}>
                   <View style={styles.rowBody}>
@@ -247,7 +254,10 @@ export default function StudentResultsPanel({ student }) {
           ) : null}
 
           <View style={[styles.list, styles.topGap]}>
-            <Text style={styles.sectionTitle}>Subject Marks</Text>
+            <View style={styles.sectionTitleRow}>
+              <Feather name="book-open" size={18} color="#1458bf" />
+              <Text style={styles.sectionTitle}>Subject Marks</Text>
+            </View>
             {marks.map((mark, index) => (
               <View key={mark.subject_id || `${mark.code || "sub"}-${index}`} style={styles.recordRow}>
                 <View style={styles.rowBody}>
@@ -276,7 +286,10 @@ export default function StudentResultsPanel({ student }) {
 function Notice({ tone, text }) {
   return (
     <View style={[styles.notice, tone === "error" ? styles.noticeError : styles.noticeInfo]}>
-      <Text style={styles.noticeText}>{text}</Text>
+      <View style={styles.noticeRow}>
+        <Feather name={tone === "error" ? "alert-circle" : "info"} size={18} color={tone === "error" ? "#9f2f21" : "#1458bf"} />
+        <Text style={styles.noticeText}>{text}</Text>
+      </View>
     </View>
   );
 }
@@ -300,10 +313,25 @@ function LoadingBlock({ label }) {
 }
 
 function MetricCard({ label, value, tone }) {
+  const iconName =
+    label === "Total"
+      ? "bar-chart-2"
+      : label === "Obtained"
+      ? "check-circle"
+      : label === "Percent"
+      ? "percent"
+      : "shield";
+  const iconColor = tone === "green" ? "#16a34a" : tone === "red" ? "#ef4444" : tone === "amber" ? "#f59e0b" : "#1458bf";
+
   return (
     <View style={styles.metricCard}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, styles[`tone_${tone}`]]}>{value}</Text>
+      <View style={styles.metricIconWrap}>
+        <Feather name={iconName} size={18} color={iconColor} />
+      </View>
+      <View style={styles.metricBody}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={[styles.metricValue, styles[`tone_${tone}`]]}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -319,28 +347,39 @@ function StatusPill({ status }) {
 
 const styles = StyleSheet.create({
   sectionTitle: {
-    color: "#17202a",
-    fontSize: 18,
+    color: "#0b2f63",
+    fontSize: 22,
     fontWeight: "900",
-    marginBottom: 10,
+    marginBottom: 12,
+  },
+  sectionTitleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
   },
   inlineField: {
     marginBottom: 12,
   },
   label: {
-    color: "#52606d",
-    fontSize: 12,
+    color: "#0d2f68",
+    fontSize: 11,
     fontWeight: "900",
-    marginBottom: 6,
+    letterSpacing: 0.3,
+    marginBottom: 7,
     textTransform: "uppercase",
   },
   card: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
     marginBottom: 12,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   rowBody: {
     flex: 1,
@@ -368,10 +407,10 @@ const styles = StyleSheet.create({
   terminalButton: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 14,
+    borderColor: "#dfe7f2",
+    borderRadius: 18,
     borderWidth: 1,
-    minHeight: 54,
+    minHeight: 58,
     minWidth: 78,
     justifyContent: "center",
     paddingHorizontal: 12,
@@ -379,8 +418,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   terminalButtonActive: {
-    backgroundColor: "#1d4ed8",
-    borderColor: "#1d4ed8",
+    backgroundColor: "#1458bf",
+    borderColor: "#1458bf",
   },
   terminalButtonLocked: {
     backgroundColor: "#f8fafc",
@@ -419,24 +458,43 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    borderColor: "#edf2fa",
+    borderRadius: 22,
     borderWidth: 1,
     flexBasis: "48%",
     flexGrow: 1,
-    padding: 12,
+    gap: 12,
+    padding: 16,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   metricLabel: {
-    color: "#667085",
+    color: "#5f6f86",
     fontSize: 11,
     fontWeight: "900",
+    letterSpacing: 0.3,
     textTransform: "uppercase",
   },
+  metricIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#f7fbff",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  metricBody: {
+    flex: 1,
+  },
   metricValue: {
-    color: "#17202a",
-    fontSize: 20,
+    color: "#0b2f63",
+    fontSize: 21,
     fontWeight: "900",
-    marginTop: 4,
+    marginTop: 8,
   },
   tone_teal: { color: "#126a6f" },
   tone_green: { color: "#166534" },
@@ -451,12 +509,16 @@ const styles = StyleSheet.create({
   recordRow: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 20,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
-    padding: 12,
+    padding: 14,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   statusPill: {
     borderRadius: 999,
@@ -478,28 +540,41 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
   notice: {
-    borderRadius: 10,
+    borderRadius: 18,
+    borderWidth: 1,
     marginBottom: 12,
-    padding: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
   },
   noticeError: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: "#fff3f1",
+    borderColor: "#f4c2ba",
   },
   noticeInfo: {
-    backgroundColor: "#dbeafe",
+    backgroundColor: "#eef7ff",
+    borderColor: "#c9defa",
   },
   noticeText: {
-    color: "#17202a",
+    color: "#17305d",
     fontSize: 13,
     fontWeight: "800",
+  },
+  noticeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
   },
   emptyState: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 20,
+    padding: 22,
+    shadowColor: "#0b2f63",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
   },
   emptyTitle: {
     color: "#17202a",
@@ -515,10 +590,14 @@ const styles = StyleSheet.create({
   },
   loadingBlock: {
     alignItems: "center",
-    paddingVertical: 16,
+    backgroundColor: "#fff",
+    borderColor: "#e3ebf5",
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingVertical: 18,
   },
   loadingText: {
-    color: "#126a6f",
+    color: "#1458bf",
     fontSize: 12,
     fontWeight: "800",
     marginTop: 6,

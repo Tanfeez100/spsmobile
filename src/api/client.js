@@ -52,6 +52,10 @@ const normalizeError = (error, fallback = "Request failed", options = {}) => {
   const raw = String(error?.message || fallback);
   const text = raw.toLowerCase();
 
+  if (error?.name === "AbortError" || text.includes("abort")) {
+    return "Request timeout ho gaya. Internet/backend check karke retry karein.";
+  }
+
   if (text.includes("network request failed") || text.includes("failed to fetch")) {
     return "Backend se connection nahi ho pa raha. API URL aur server status check karein.";
   }
@@ -64,8 +68,8 @@ const normalizeError = (error, fallback = "Request failed", options = {}) => {
     return "Wrong email/username or password.";
   }
 
-  if (text.includes("jwt") || text.includes("token") || error?.status === 401) {
-    return "Session expire ho gaya hai. Please dobara login karein.";
+  if (text.includes("jwt") || text.includes("token") || text.includes("login expired") || error?.status === 401) {
+    return "Login expire ho gaya hai. Please dobara login karein.";
   }
 
   if (text.includes("teacher is not assigned")) {
