@@ -1,23 +1,14 @@
 const trimTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
 
-const DEV_API_BASE_URL = "http://localhost:5000";
-const PROD_API_BASE_URL = "https://starpublicschool.onrender.com";
-const PROD_HOSTS = new Set([
-  "starpublicschool.onrender.com",
-  "http://starpublicschool.onrender.com",
-  "https://starpublicschool.onrender.com",
-]);
+const PROD_API_BASE_URL = "https://starpublicschool-2kzu.onrender.com";
 
 export const getDefaultApiBaseUrl = () => {
   const envUrl = trimTrailingSlash(process.env.EXPO_PUBLIC_API_BASE_URL);
   if (envUrl) {
-    if (typeof __DEV__ !== "undefined" && __DEV__ && PROD_HOSTS.has(envUrl)) {
-      return DEV_API_BASE_URL;
-    }
     return envUrl;
   }
 
-  return typeof __DEV__ !== "undefined" && __DEV__ ? DEV_API_BASE_URL : PROD_API_BASE_URL;
+  return PROD_API_BASE_URL;
 };
 
 export const API_BASE_URL = getDefaultApiBaseUrl();
@@ -45,6 +36,9 @@ export const buildQuery = (params = {}) => {
 
 const getMessage = (data, fallback) => {
   if (typeof data === "string") return data;
+  if (Array.isArray(data?.errors) && data.errors.length) {
+    return data.errors.join("; ");
+  }
   return data?.message || data?.error || fallback;
 };
 

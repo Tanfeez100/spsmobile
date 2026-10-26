@@ -11,6 +11,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { formatDisplayDate } from "../../utils/date";
 import { getStudentLeaves, submitStudentLeave } from "../../api/client";
+import { colors } from "../../theme/colors";
 
 const leaveTypes = ["Sick Leave", "Family Work", "Function", "Other"];
 const statusLabels = {
@@ -97,7 +98,7 @@ export default function StudentLeavePanel({ session }) {
   return (
     <View>
       <View style={styles.sectionTitleRow}>
-        <Feather name="file-plus" size={18} color="#1458bf" />
+        <Feather name="file-plus" size={18} color={colors.primaryDark} />
         <Text style={styles.sectionTitle}>Leave Apply</Text>
       </View>
       <View style={styles.card}>
@@ -235,7 +236,7 @@ function StatusPill({ status }) {
 
 const styles = StyleSheet.create({
   sectionTitle: {
-    color: "#0b2f63",
+    color: colors.primaryDeep,
     fontSize: 22,
     fontWeight: "900",
     marginBottom: 12,
@@ -247,19 +248,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   card: {
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 24,
     borderWidth: 1,
     marginBottom: 12,
     padding: 16,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
+    elevation: 3,
   },
   label: {
-    color: "#0d2f68",
+    color: colors.textSecondary,
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.3,
@@ -267,11 +269,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   input: {
-    backgroundColor: "#fff",
-    borderColor: "#dde6f2",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 16,
     borderWidth: 1,
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: "800",
     minHeight: 52,
@@ -292,8 +294,8 @@ const styles = StyleSheet.create({
   },
   selectButton: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#dde6f2",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
@@ -303,62 +305,64 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   selectButtonActive: {
-    borderColor: "#1458bf",
+    borderColor: colors.primaryDark,
   },
   selectText: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: "900",
   },
   chevron: {
-    color: "#6c7d97",
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: "900",
   },
   menu: {
-    backgroundColor: "#fff",
-    borderColor: "#dde6f2",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 18,
     borderWidth: 1,
     marginTop: 8,
     overflow: "hidden",
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 16,
+    elevation: 3,
   },
   menuItem: {
     paddingHorizontal: 12,
     paddingVertical: 12,
   },
   menuItemActive: {
-    backgroundColor: "#edf4ff",
+    backgroundColor: colors.tintSoft,
   },
   menuItemText: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: "800",
   },
   menuItemTextActive: {
-    color: "#1458bf",
+    color: colors.primaryDark,
   },
   submitButton: {
     alignItems: "center",
-    backgroundColor: "#1458bf",
+    backgroundColor: colors.primaryDark,
     borderRadius: 18,
     minHeight: 56,
     justifyContent: "center",
     marginTop: 12,
-    shadowColor: "#1458bf",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    elevation: 4,
   },
   submitButtonDisabled: {
-    opacity: 0.72,
+    opacity: 0.65,
   },
   submitText: {
-    color: "#fff",
+    color: colors.white,
     fontSize: 14,
     fontWeight: "900",
   },
@@ -371,15 +375,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   requestCard: {
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     padding: 14,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
+    elevation: 2,
   },
   requestHead: {
     flexDirection: "row",
@@ -389,18 +394,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   requestTitle: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "900",
   },
   requestMeta: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 3,
   },
   requestSub: {
-    color: "#52606d",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 3,
@@ -412,16 +417,16 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   statusPending: {
-    backgroundColor: "#fef3c7",
+    backgroundColor: colors.warningBg,
   },
   statusApproved: {
-    backgroundColor: "#dcfce7",
+    backgroundColor: colors.successBg,
   },
   statusRejected: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: colors.dangerBg,
   },
   statusText: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 11,
     fontWeight: "900",
     textAlign: "center",
@@ -435,15 +440,15 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   noticeError: {
-    backgroundColor: "#fff3f1",
-    borderColor: "#f4c2ba",
+    backgroundColor: colors.dangerBg,
+    borderColor: colors.dangerBorder,
   },
   noticeInfo: {
-    backgroundColor: "#eef7ff",
-    borderColor: "#c9defa",
+    backgroundColor: colors.tintSoft,
+    borderColor: colors.tintBorder,
   },
   noticeText: {
-    color: "#17305d",
+    color: colors.primaryDeep,
     fontSize: 13,
     fontWeight: "800",
   },
@@ -454,23 +459,24 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     padding: 24,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
+    elevation: 2,
   },
   emptyTitle: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "900",
   },
   emptyText: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 4,
@@ -478,14 +484,14 @@ const styles = StyleSheet.create({
   },
   loadingBlock: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     paddingVertical: 18,
   },
   loadingText: {
-    color: "#1458bf",
+    color: colors.primaryDark,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 6,

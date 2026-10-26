@@ -11,4 +11,10 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# Add any project specific keep options here:
+# React Native & Expo Module keep rules for safe R8 minification
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.jni.** { *; }
+-keep class expo.modules.** { *; }
+-keepattributes *Annotation*
+-dontwarn com.facebook.react.**
+-dontwarn expo.modules.**

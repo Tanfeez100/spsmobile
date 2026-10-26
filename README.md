@@ -25,7 +25,7 @@ npm start
 By default the app uses the hosted backend:
 
 ```bash
-https://starpublicschool.onrender.com
+https://starpublicschool-2kzu.onrender.com
 ```
 
 For local backend testing, override it before starting Expo:

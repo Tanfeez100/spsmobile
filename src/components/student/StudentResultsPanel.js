@@ -8,8 +8,9 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { formatDisplayDate } from "../../utils/date";
+import { formatDisplayDate, getDefaultAcademicYear } from "../../utils/date";
 import { getStudentResultAvailability, getStudentResultPublic } from "../../api/client";
+import { colors } from "../../theme/colors";
 
 const terminals = ["First", "Second", "Third", "Annual"];
 
@@ -24,7 +25,8 @@ export default function StudentResultsPanel({ student }) {
   const studentClass = String(student?.class || "").trim();
   const studentSection = String(student?.section || "").trim();
   const studentRoll = String(student?.rollNo || student?.roll_no || "").trim();
-  const academicYear = String(student?.academicYear || student?.academic_year || "").trim();
+  const academicYear =
+    String(student?.academicYear || student?.academic_year || "").trim() || getDefaultAcademicYear();
 
   const buildParams = useCallback(
     (terminalValue) => ({
@@ -347,7 +349,7 @@ function StatusPill({ status }) {
 
 const styles = StyleSheet.create({
   sectionTitle: {
-    color: "#0b2f63",
+    color: colors.primaryDeep,
     fontSize: 22,
     fontWeight: "900",
     marginBottom: 12,
@@ -362,7 +364,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   label: {
-    color: "#0d2f68",
+    color: colors.textSecondary,
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.3,
@@ -370,33 +372,34 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   card: {
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     marginBottom: 12,
     padding: 14,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
     shadowRadius: 14,
+    elevation: 3,
   },
   rowBody: {
     flex: 1,
   },
   rowTitle: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "900",
   },
   rowMeta: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 3,
   },
   rowSub: {
-    color: "#52606d",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 3,
@@ -406,8 +409,8 @@ const styles = StyleSheet.create({
   },
   terminalButton: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#dfe7f2",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 18,
     borderWidth: 1,
     minHeight: 58,
@@ -418,8 +421,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   terminalButtonActive: {
-    backgroundColor: "#1458bf",
-    borderColor: "#1458bf",
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryDark,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   terminalButtonLocked: {
     backgroundColor: "#f8fafc",
@@ -427,28 +435,28 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   terminalText: {
-    color: "#52606d",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "900",
   },
   terminalTextActive: {
-    color: "#fff",
+    color: colors.white,
   },
   terminalTextLocked: {
-    color: "#64748b",
+    color: colors.textLight,
   },
   terminalSubtext: {
-    color: "#94a3b8",
+    color: colors.textLight,
     fontSize: 10,
     fontWeight: "800",
     marginTop: 2,
     textTransform: "uppercase",
   },
   terminalSubtextActive: {
-    color: "#dbeafe",
+    color: colors.tintBorder,
   },
   terminalSubtextLocked: {
-    color: "#94a3b8",
+    color: colors.textLight,
   },
   metricGrid: {
     flexDirection: "row",
@@ -457,23 +465,24 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   metricCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
     flexDirection: "row",
     alignItems: "center",
-    borderColor: "#edf2fa",
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     flexBasis: "48%",
     flexGrow: 1,
     gap: 12,
     padding: 16,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
     shadowRadius: 14,
+    elevation: 2,
   },
   metricLabel: {
-    color: "#5f6f86",
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.3,
@@ -481,7 +490,7 @@ const styles = StyleSheet.create({
   },
   metricIconWrap: {
     alignItems: "center",
-    backgroundColor: "#f7fbff",
+    backgroundColor: colors.tintSoft,
     borderRadius: 999,
     height: 44,
     justifyContent: "center",
@@ -491,15 +500,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   metricValue: {
-    color: "#0b2f63",
+    color: colors.primaryDeep,
     fontSize: 21,
     fontWeight: "900",
     marginTop: 8,
   },
-  tone_teal: { color: "#126a6f" },
-  tone_green: { color: "#166534" },
-  tone_amber: { color: "#92400e" },
-  tone_red: { color: "#b91c1c" },
+  tone_teal: { color: colors.primaryDark },
+  tone_green: { color: colors.success },
+  tone_amber: { color: colors.warning },
+  tone_red: { color: colors.danger },
   list: {
     gap: 10,
   },
@@ -508,17 +517,18 @@ const styles = StyleSheet.create({
   },
   recordRow: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 20,
     borderWidth: 1,
     flexDirection: "row",
     gap: 12,
     padding: 14,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
+    elevation: 2,
   },
   statusPill: {
     borderRadius: 999,
@@ -527,13 +537,13 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   statusPublished: {
-    backgroundColor: "#dcfce7",
+    backgroundColor: colors.successBg,
   },
   statusLocked: {
-    backgroundColor: "#dbeafe",
+    backgroundColor: colors.tintSoft,
   },
   statusText: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 11,
     fontWeight: "900",
     textAlign: "center",
@@ -547,15 +557,15 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   noticeError: {
-    backgroundColor: "#fff3f1",
-    borderColor: "#f4c2ba",
+    backgroundColor: colors.dangerBg,
+    borderColor: colors.dangerBorder,
   },
   noticeInfo: {
-    backgroundColor: "#eef7ff",
-    borderColor: "#c9defa",
+    backgroundColor: colors.tintSoft,
+    borderColor: colors.tintBorder,
   },
   noticeText: {
-    color: "#17305d",
+    color: colors.primaryDeep,
     fontSize: 13,
     fontWeight: "800",
   },
@@ -566,23 +576,24 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     padding: 22,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
+    elevation: 2,
   },
   emptyTitle: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 15,
     fontWeight: "900",
   },
   emptyText: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 4,
@@ -590,14 +601,14 @@ const styles = StyleSheet.create({
   },
   loadingBlock: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     paddingVertical: 18,
   },
   loadingText: {
-    color: "#1458bf",
+    color: colors.primaryDark,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 6,

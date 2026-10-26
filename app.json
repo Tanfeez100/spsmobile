@@ -28,7 +28,7 @@
         "ACCESS_FINE_LOCATION"
       ],
       "adaptiveIcon": {
-        "foregroundImage": "./src/assets/logo.png",
+        "foregroundImage": "./src/assets/adaptive-icon.png",
         "backgroundColor": "#f6f1e7"
       }
     },
@@ -39,6 +39,9 @@
       "eas": {
         "projectId": "18a5e980-900e-492c-8819-61bbdfc5f1fb"
       }
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

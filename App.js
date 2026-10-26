@@ -18,7 +18,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { StatusBar as ExpoStatusBar } from "expo-status-bar";
@@ -307,6 +307,25 @@ const studentTabSections = [
 const getActiveTabSection = (sections, tabKey) =>
   sections.find((section) => section.tabs.some((tab) => tab.key === tabKey)) || sections[0] || null;
 
+const getSectionVectorIcon = (sectionKey, isActive) => {
+  switch (sectionKey) {
+    case "home":
+      return isActive ? "home" : "home-outline";
+    case "attendance":
+      return isActive ? "calendar" : "calendar-outline";
+    case "fees":
+      return isActive ? "wallet" : "wallet-outline";
+    case "results":
+      return isActive ? "trophy" : "trophy-outline";
+    case "marks":
+      return isActive ? "document-text" : "document-text-outline";
+    case "reportsHistory":
+      return isActive ? "stats-chart" : "stats-chart-outline";
+    default:
+      return isActive ? "grid" : "grid-outline";
+  }
+};
+
 const getSectionIcon = (sectionKey) =>
   ({
     home: iconHome,
@@ -328,6 +347,34 @@ const getTeacherFeatureIcon = (featureKey) =>
     submitMarks: iconReportCard,
     viewMarks: iconView,
   }[featureKey] || iconAttendance);
+
+const getTabIconName = (key) => {
+  switch (key) {
+    case "home":
+      return "home";
+    case "attendance":
+      return "calendar";
+    case "leave":
+    case "leaves":
+      return "send";
+    case "holidays":
+      return "sun";
+    case "fees":
+      return "credit-card";
+    case "results":
+      return "award";
+    case "today":
+      return "check-circle";
+    case "history":
+      return "clock";
+    case "submitMarks":
+      return "edit-3";
+    case "viewMarks":
+      return "file-text";
+    default:
+      return "grid";
+  }
+};
 
 const getAccessToken = (data) => data?.access_token || data?.session?.access_token || "";
 const getRefreshToken = (data) => data?.session?.refresh_token || data?.refresh_token || "";
@@ -392,10 +439,10 @@ const registerStudentDeviceToken = async (session) => {
 
 const shouldRefreshTeacherSession = (session, leadMs = 2 * 60 * 1000) => {
   if (session?.role !== "teacher" || !session.refreshToken) return false;
-  if (!session.tokenExpiresAt) return true;
+  if (!session.tokenExpiresAt) return false;
 
   const expiresAt = Date.parse(session.tokenExpiresAt);
-  if (!Number.isFinite(expiresAt)) return true;
+  if (!Number.isFinite(expiresAt)) return false;
 
   return expiresAt - Date.now() <= leadMs;
 };
@@ -438,6 +485,8 @@ export default function App() {
   const [session, setSessionState] = useState(null);
   const [legalView, setLegalView] = useState(null);
   const refreshInFlightRef = useRef(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
 
   useEffect(() => {
     loadSession()
@@ -450,34 +499,32 @@ export default function App() {
     await saveSession(nextSession);
   };
 
-  const refreshTeacherSession = useCallback(async (sessionToRefresh = session) => {
-    if (sessionToRefresh?.role !== "teacher" || !sessionToRefresh.refreshToken) {
-      return sessionToRefresh;
+  const refreshTeacherSession = useCallback(async (sessionToRefresh) => {
+    const activeSession = sessionToRefresh || sessionRef.current;
+    if (activeSession?.role !== "teacher" || !activeSession?.refreshToken) {
+      return activeSession;
     }
 
     if (!refreshInFlightRef.current) {
       refreshInFlightRef.current = (async () => {
-        const response = await refreshTeacherToken(sessionToRefresh.refreshToken);
+        const response = await refreshTeacherToken(activeSession.refreshToken);
         const token = getAccessToken(response);
-        const refreshToken = getRefreshToken(response) || sessionToRefresh.refreshToken;
+        const refreshToken = getRefreshToken(response) || activeSession.refreshToken;
 
         if (!token) {
           throw new Error("Refresh response me token nahi mila.");
         }
 
         const nextSession = {
-          ...sessionToRefresh,
+          ...activeSession,
           token,
           refreshToken,
-          user: response.user || sessionToRefresh.user,
+          user: response.user || activeSession.user,
           tokenExpiresAt: getTokenExpiresAt(response),
           savedAt: new Date().toISOString(),
         };
 
-        setSessionState((current) => {
-          if (!current || current.savedAt !== sessionToRefresh.savedAt) return current;
-          return nextSession;
-        });
+        setSessionState(nextSession);
         await saveSession(nextSession);
         return nextSession;
       })().finally(() => {
@@ -486,19 +533,19 @@ export default function App() {
     }
 
     return refreshInFlightRef.current;
-  }, [session]);
+  }, []);
 
   useEffect(() => {
-    if (session?.role !== "teacher" || !session.refreshToken) return undefined;
+    if (session?.role !== "teacher" || !session?.refreshToken) return undefined;
 
     return registerAuthRefreshHandler(async () => {
-      const refreshedSession = await refreshTeacherSession(session);
+      const refreshedSession = await refreshTeacherSession(sessionRef.current);
       return refreshedSession?.token || "";
     });
-  }, [refreshTeacherSession, session]);
+  }, [refreshTeacherSession, session?.refreshToken, session?.role]);
 
   useEffect(() => {
-    if (session?.role !== "teacher" || !session.refreshToken) return undefined;
+    if (session?.role !== "teacher" || !session?.refreshToken) return undefined;
 
     let refreshTimer;
     let cancelled = false;
@@ -508,22 +555,34 @@ export default function App() {
 
       const expiresAt = Date.parse(activeSession.tokenExpiresAt || "");
       const fallbackMs = 25 * 60 * 1000;
-      const refreshInMs = Number.isFinite(expiresAt)
-        ? Math.max(expiresAt - Date.now() - 2 * 60 * 1000, 0)
-        : 0;
+      const minDelayMs = 15 * 60 * 1000;
+      let refreshInMs = fallbackMs;
+
+      if (Number.isFinite(expiresAt)) {
+        const diff = expiresAt - Date.now() - 2 * 60 * 1000;
+        if (diff > minDelayMs) {
+          refreshInMs = Math.min(diff, 24 * 60 * 60 * 1000);
+        } else {
+          refreshInMs = fallbackMs;
+        }
+      }
 
       refreshTimer = setTimeout(async () => {
         try {
           const refreshed = await refreshTeacherSession(activeSession);
-          scheduleRefresh(refreshed);
+          if (!cancelled && refreshed) {
+            scheduleRefresh(refreshed);
+          }
         } catch (error) {
           console.warn("Teacher session refresh failed:", error.message);
-          scheduleRefresh({
-            ...activeSession,
-            tokenExpiresAt: new Date(Date.now() + fallbackMs).toISOString(),
-          });
+          if (!cancelled) {
+            scheduleRefresh({
+              ...activeSession,
+              tokenExpiresAt: new Date(Date.now() + fallbackMs).toISOString(),
+            });
+          }
         }
-      }, Number.isFinite(expiresAt) ? refreshInMs : 0);
+      }, refreshInMs);
     };
 
     scheduleRefresh(session);
@@ -532,27 +591,24 @@ export default function App() {
       cancelled = true;
       if (refreshTimer) clearTimeout(refreshTimer);
     };
-  }, [refreshTeacherSession, session]);
+  }, [refreshTeacherSession, session?.refreshToken, session?.tokenExpiresAt]);
 
   useEffect(() => {
-    if (session?.role !== "teacher" || !session.refreshToken) return undefined;
-
-    const refreshIfNeeded = () => {
-      if (shouldRefreshTeacherSession(session)) {
-        refreshTeacherSession(session).catch((error) => {
-          console.warn("Teacher session refresh failed:", error.message);
-        });
-      }
-    };
-
-    refreshIfNeeded();
+    if (session?.role !== "teacher" || !session?.refreshToken) return undefined;
 
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") refreshIfNeeded();
+      if (state === "active") {
+        const current = sessionRef.current;
+        if (shouldRefreshTeacherSession(current)) {
+          refreshTeacherSession(current).catch((error) => {
+            console.warn("Teacher session refresh on resume failed:", error.message);
+          });
+        }
+      }
     });
 
     return () => subscription.remove();
-  }, [refreshTeacherSession, session]);
+  }, [refreshTeacherSession, session?.refreshToken, session?.role]);
 
   const handleLogout = async () => {
     setSessionState(null);
@@ -561,14 +617,15 @@ export default function App() {
 
   if (booting) {
     return (
-      <SafeAreaView style={styles.centerScreen}>
+      <SafeAreaView style={[styles.centerScreen, { backgroundColor: "#064e3b" }]}>
+        <ExpoStatusBar style="light" />
         <View style={styles.openingBrandCard}>
           <Image source={schoolLogo} style={styles.openingLogo} resizeMode="contain" />
-          <Text style={styles.openingTitle}>{SCHOOL_NAME}</Text>
-          <Text style={styles.openingSubtitle}>Mobile School Portal</Text>
+          <Text style={[styles.openingTitle, { color: "#ffffff" }]}>{SCHOOL_NAME}</Text>
+          <Text style={[styles.openingSubtitle, { color: "#a7f3d0" }]}>Mobile School Portal</Text>
         </View>
-        <ActivityIndicator color="#0f5f63" size="large" />
-        <Text style={styles.loadingText}>Preparing your campus dashboard...</Text>
+        <ActivityIndicator color="#10b981" size="large" />
+        <Text style={[styles.loadingText, { color: "#ecfdf5", marginTop: 12 }]}>Preparing your campus dashboard...</Text>
       </SafeAreaView>
     );
   }
@@ -586,8 +643,8 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ExpoStatusBar style="dark" />
+    <SafeAreaView style={[styles.safeArea, !session && { backgroundColor: "#064e3b" }]}>
+      <ExpoStatusBar style={session ? "dark" : "light"} />
       {session?.role === "student" && session.mustResetPassword ? (
         <StudentPasswordSetup session={session} onComplete={handleSession} onLogout={handleLogout} />
       ) : session ? (
@@ -619,6 +676,13 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   const [showPassword, setShowPassword] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [rememberPassword, setRememberPassword] = useState(false);
+  const scrollViewRef = useRef(null);
+
+  const handleInputFocus = (offset = 140) => {
+    setTimeout(() => {
+      scrollViewRef.current?.scrollTo({ y: offset, animated: true });
+    }, 150);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -663,10 +727,24 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
     setError("");
 
     try {
+      const cleanIdentity = mode === "student" ? identity.trim().toUpperCase() : identity.trim();
+      let cleanPassword = password.trim();
+      if (mode === "student") {
+        const dmy = cleanPassword.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+        if (dmy) {
+          cleanPassword = `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+        } else {
+          const ymd = cleanPassword.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+          if (ymd) {
+            cleanPassword = `${ymd[1]}-${ymd[2].padStart(2, "0")}-${ymd[3].padStart(2, "0")}`;
+          }
+        }
+      }
+
       const response =
         mode === "teacher"
-          ? await loginTeacher(identity.trim(), password)
-          : await loginStudent(identity.trim(), password);
+          ? await loginTeacher(cleanIdentity, password)
+          : await loginStudent(cleanIdentity, cleanPassword);
       const token = getAccessToken(response);
 
       if (!token || !response?.user) {
@@ -684,7 +762,7 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
       };
 
       if (rememberPassword) {
-        await saveSavedLogin(mode, { identity, password });
+        await saveSavedLogin(mode, { identity: cleanIdentity, password });
       } else {
         await clearSavedLogin(mode);
       }
@@ -698,12 +776,18 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.portalShell}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+      style={styles.portalShell}
+    >
       <ScrollView
-        automaticallyAdjustKeyboardInsets
+        ref={scrollViewRef}
+        automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
         contentContainerStyle={styles.portalContent}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.portalFrame}>
           <View style={styles.portalPhotoLayer}>
@@ -711,7 +795,6 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
             <View style={styles.portalPhotoWash} />
           </View>
           <View style={styles.portalWhiteSheet} />
-          <View style={styles.portalGoldArc} />
 
           <View style={styles.portalHero}>
             <View style={styles.portalLogoWrap}>
@@ -722,42 +805,10 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
             </View>
 
             <View style={styles.portalEyebrowRow}>
-              <View style={styles.portalTinyLine} />
               <Text style={styles.portalEyebrow}>{SCHOOL_SHORT_NAME} MOBILE PORTAL</Text>
-              <View style={styles.portalTinyLine} />
             </View>
             <Text style={styles.portalTitle}>{SCHOOL_NAME}</Text>
             <Text style={styles.portalSubtitle}>{SCHOOL_TAGLINE}</Text>
-
-            <View style={styles.portalDivider}>
-              <View style={styles.portalDividerLine} />
-              <Text style={styles.portalDividerStar}>*</Text>
-              <View style={styles.portalDividerLine} />
-            </View>
-
-            <View style={styles.portalFeatureRow}>
-              <View style={styles.portalFeatureCard}>
-                <View style={[styles.portalFeatureIcon, styles.portalFeatureIconBlue]}>
-                  <Image source={iconCheckout} style={[styles.portalFeatureIconImage, styles.portalFeatureIconImageBlue]} resizeMode="contain" />
-                </View>
-                <Text style={styles.portalFeatureTitle}>Teachers</Text>
-                <Text style={styles.portalFeatureText}>Manage classes</Text>
-              </View>
-              <View style={styles.portalFeatureCard}>
-                <View style={[styles.portalFeatureIcon, styles.portalFeatureIconGreen]}>
-                  <Image source={iconStudents} style={[styles.portalFeatureIconImage, styles.portalFeatureIconImageGreen]} resizeMode="contain" />
-                </View>
-                <Text style={styles.portalFeatureTitle}>Students</Text>
-                <Text style={styles.portalFeatureText}>Track learning</Text>
-              </View>
-              <View style={styles.portalFeatureCard}>
-                <View style={[styles.portalFeatureIcon, styles.portalFeatureIconGold]}>
-                  <Image source={iconAttendance} style={[styles.portalFeatureIconImage, styles.portalFeatureIconImageGold]} resizeMode="contain" />
-                </View>
-                <Text style={styles.portalFeatureTitle}>Attendance</Text>
-                <Text style={styles.portalFeatureText}>Daily updates</Text>
-              </View>
-            </View>
           </View>
 
           <View style={styles.portalSegment}>
@@ -777,48 +828,61 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
             <Text style={styles.portalLabel}>{mode === "teacher" ? "EMAIL" : "USERNAME"}</Text>
             <View style={styles.portalInputShell}>
               <View style={styles.portalInputIcon}>
-                <Text style={styles.portalInputIconText}>{mode === "teacher" ? "✉" : "👤"}</Text>
+                <Feather name={mode === "teacher" ? "mail" : "user"} size={18} color="#047857" />
               </View>
               <TextInput
-                autoCapitalize="none"
+                autoCapitalize={mode === "student" ? "characters" : "none"}
                 autoCorrect={false}
                 keyboardType={mode === "teacher" ? "email-address" : "default"}
                 onChangeText={setIdentity}
-                placeholder={mode === "teacher" ? "teacher@school.com" : "student username"}
-                placeholderTextColor="#a3adbc"
+                onFocus={() => handleInputFocus(120)}
+                placeholder={mode === "teacher" ? "teacher@school.com" : "e.g. STUD0414"}
+                placeholderTextColor="#94a3b8"
                 style={styles.portalInput}
                 value={identity}
               />
             </View>
 
-            <Text style={styles.portalLabel}>{mode === "teacher" ? "PASSWORD" : "PASSWORD"}</Text>
+            <Text style={styles.portalLabel}>{mode === "teacher" ? "PASSWORD" : "PASSWORD / DEFAULT DOB"}</Text>
             <View style={styles.portalInputShell}>
               <View style={styles.portalInputIcon}>
-                <Text style={styles.portalInputIconText}>🔒</Text>
+                <Feather name="lock" size={18} color="#047857" />
               </View>
               <TextInput
                 onChangeText={setPassword}
-                placeholder="Password"
-                placeholderTextColor="#a3adbc"
+                onFocus={() => handleInputFocus(180)}
+                placeholder={mode === "student" ? "e.g. Tanfeez2010 or Tanf2010 or DOB" : "Password"}
+                placeholderTextColor="#94a3b8"
                 secureTextEntry={!showPassword}
                 style={styles.portalInput}
                 value={password}
               />
-              <Pressable onPress={() => setShowPassword((current) => !current)} style={styles.portalEyeButton}>
-                <Text style={styles.portalEyeText}>{showPassword ? "◉" : "◌"}</Text>
+              <Pressable
+                onPress={() => setShowPassword((current) => !current)}
+                style={styles.portalEyeButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                accessibilityRole="button"
+              >
+                <Feather name={showPassword ? "eye" : "eye-off"} size={20} color="#475569" />
               </Pressable>
             </View>
 
-            {mode === "student" ? <Text style={styles.portalHelperText}>First login me apni date of birth use karein. Login ke baad password set karna mandatory hai.</Text> : null}
+            {mode === "student" ? (
+              <Text style={styles.portalHelperText}>
+                First login me default password: Name ke starting letters + Birth Year (e.g. Tanfeez2010 ya Tanf2010) ya Date of Birth. Login ke baad naya password set kar sakte hain.
+              </Text>
+            ) : null}
             {error ? <Text style={styles.portalErrorText}>{error}</Text> : null}
 
             <View style={styles.portalOptionsRow}>
               <Pressable
                 onPress={() => setRememberPassword((current) => !current)}
                 style={styles.portalRememberRow}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               >
                 <View style={[styles.portalCheckBox, rememberPassword && styles.portalCheckBoxActive]}>
-                  <Text style={styles.portalCheckText}>✓</Text>
+                  {rememberPassword ? <Feather name="check" size={12} color="#fff" /> : null}
                 </View>
                 <Text style={styles.portalRememberText}>Save password</Text>
               </Pressable>
@@ -831,35 +895,28 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
               <Pressable
                 onPress={() => setAgreed((current) => !current)}
                 style={[styles.portalConsentBox, agreed && styles.portalConsentBoxActive]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text style={styles.portalConsentCheck}>{agreed ? "✓" : ""}</Text>
+                {agreed ? <Feather name="check" size={13} color="#fff" /> : null}
               </Pressable>
-              <Text style={styles.portalConsentText}>I agree to the Privacy Policy and Terms &amp; Conditions.</Text>
+              <Text style={styles.portalConsentText}>
+                I agree to the{" "}
+                <Text onPress={onOpenPrivacy} style={styles.portalConsentLink}>Privacy Policy</Text>
+                {" and "}
+                <Text onPress={onOpenTerms} style={styles.portalConsentLink}>Terms & Conditions</Text>.
+              </Text>
             </View>
 
             <Pressable disabled={loading || !agreed} onPress={submit} style={[styles.portalLoginButton, (loading || !agreed) && styles.disabledButton]}>
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.portalLoginText}>Login</Text>}
             </Pressable>
-
-            <View style={styles.portalLegalLinksRow}>
-              <Pressable onPress={onOpenPrivacy} style={styles.portalLegalLinkButton}>
-                <Text style={styles.portalLegalLinkText}>Privacy Policy</Text>
-              </Pressable>
-              <Pressable onPress={onOpenTerms} style={styles.portalLegalLinkButton}>
-                <Text style={styles.portalLegalLinkText}>Terms & Conditions</Text>
-              </Pressable>
-              <Pressable onPress={onOpenContact} style={styles.portalLegalLinkButton}>
-                <Text style={styles.portalLegalLinkText}>Contact School</Text>
-              </Pressable>
-            </View>
-
           </View>
 
           <View style={styles.portalFooter}>
             <Text style={styles.portalFooterText}>
-              Education is the most powerful weapon which you can use to change the world.
+              “Education is the most powerful weapon which you can use to change the world.”
             </Text>
-            <Text style={styles.portalFooterAuthor}>- Nelson Mandela</Text>
+            <Text style={styles.portalFooterAuthor}>— Nelson Mandela</Text>
           </View>
         </View>
       </ScrollView>
@@ -870,6 +927,8 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
 function StudentPasswordSetup({ session, onComplete, onLogout }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -947,24 +1006,42 @@ function StudentPasswordSetup({ session, onComplete, onLogout }) {
           />
 
           <Text style={styles.inputLabel}>New Password</Text>
-          <TextInput
-            onChangeText={setPassword}
-            placeholder="New password"
-            placeholderTextColor="#8a8f98"
-            secureTextEntry
-            style={styles.input}
-            value={password}
-          />
+          <View style={styles.passwordInputWrap}>
+            <TextInput
+              onChangeText={setPassword}
+              placeholder="New password (min 6 characters)"
+              placeholderTextColor="#8a8f98"
+              secureTextEntry={!showNewPassword}
+              style={[styles.input, styles.passwordInputFlex]}
+              value={password}
+            />
+            <Pressable
+              onPress={() => setShowNewPassword((c) => !c)}
+              style={styles.inputEyeBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name={showNewPassword ? "eye" : "eye-off"} size={20} color="#64748b" />
+            </Pressable>
+          </View>
 
           <Text style={styles.inputLabel}>Confirm Password</Text>
-          <TextInput
-            onChangeText={setConfirmPassword}
-            placeholder="Confirm password"
-            placeholderTextColor="#8a8f98"
-            secureTextEntry
-            style={styles.input}
-            value={confirmPassword}
-          />
+          <View style={styles.passwordInputWrap}>
+            <TextInput
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm new password"
+              placeholderTextColor="#8a8f98"
+              secureTextEntry={!showConfirmPassword}
+              style={[styles.input, styles.passwordInputFlex]}
+              value={confirmPassword}
+            />
+            <Pressable
+              onPress={() => setShowConfirmPassword((c) => !c)}
+              style={styles.inputEyeBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name={showConfirmPassword ? "eye" : "eye-off"} size={20} color="#64748b" />
+            </Pressable>
+          </View>
 
           <Text style={styles.helperText}>
             Is password ke baad future login me DOB ki jagah yehi password use hoga.
@@ -993,80 +1070,135 @@ function StudentPasswordSetup({ session, onComplete, onLogout }) {
 }
 
 function StudentProfilePage({ student, onBack, onLogout, onOpenPrivacy, onOpenTerms, onOpenContact }) {
+  const studentName = getStudentDisplayName(student);
+  const academicYear = student?.academicYear || student?.academic_year || getDefaultAcademicYear();
+  const classLabel = student?.class ? `Class ${student.class}${student?.section ? ` - ${student.section}` : ""}` : "Class -";
+  const rollLabel = student?.rollNo || student?.roll_no || "-";
+  const admNo = student?.admissionNumber || student?.admission_number || student?.username || "-";
+
   const sections = [
     {
-      title: "Identity",
+      title: "Academic Information",
+      icon: "book-open",
       items: [
-        { label: "Name", value: getStudentDisplayName(student) },
-        { label: "Username", value: student?.username || "-" },
+        { label: "Class & Section", value: classLabel },
+        { label: "Roll Number", value: `Roll #${rollLabel}` },
+        { label: "Academic Session", value: academicYear },
+        { label: "Student Status", value: student?.status ? String(student.status).toUpperCase() : "ACTIVE" },
+        { label: "Admission Number", value: admNo },
+        { label: "Admission Date", value: formatProfileDate(student?.admissionDate || student?.admission_date) },
+      ],
+    },
+    {
+      title: "Family & Guardians",
+      icon: "users",
+      items: [
+        { label: "Father's Name", value: student?.fatherName || student?.father_name || "-" },
+        { label: "Mother's Name", value: student?.motherName || student?.mother_name || "-" },
+        { label: "Guardian Contact", value: student?.mobile || "-" },
+        { label: "Residential Address", value: student?.address || "-" },
+      ],
+    },
+    {
+      title: "Official Identifiers",
+      icon: "file-text",
+      items: [
+        { label: "Username / Portal ID", value: student?.username || "-" },
         { label: "Date of Birth", value: formatProfileDate(student?.dateOfBirth || student?.date_of_birth) },
         { label: "Gender", value: student?.gender || "-" },
+        { label: "PEN Number", value: student?.penNumber || student?.pen_number || "-" },
+        { label: "Aadhaar Card", value: student?.aadhaarCard || student?.aadhaar_card || "-" },
       ],
     },
     {
-      title: "Academic",
+      title: "Facilities & Transport",
+      icon: "truck",
       items: [
-        { label: "Class", value: student?.class || "-" },
-        { label: "Section", value: student?.section || "-" },
-        { label: "Roll No", value: student?.rollNo || student?.roll_no || "-" },
-        { label: "Academic Year", value: student?.academicYear || student?.academic_year || "-" },
-        { label: "Status", value: student?.status || "-" },
-      ],
-    },
-    {
-      title: "Family",
-      items: [
-        { label: "Father Name", value: student?.fatherName || student?.father_name || "-" },
-        { label: "Mother Name", value: student?.motherName || student?.mother_name || "-" },
-      ],
-    },
-    {
-      title: "Contact",
-      items: [
-        { label: "Mobile", value: student?.mobile || "-" },
-        { label: "Address", value: student?.address || "-" },
-      ],
-    },
-    {
-      title: "Admission",
-      items: [
-        { label: "Aadhaar", value: student?.aadhaarCard || student?.aadhaar_card || "-" },
-        { label: "PEN", value: student?.penNumber || student?.pen_number || "-" },
-        { label: "Admission No.", value: student?.admissionNumber || student?.admission_number || "-" },
-        { label: "Admission Date", value: formatProfileDate(student?.admissionDate || student?.admission_date) },
-        { label: "Transport", value: student?.usesTransport || student?.uses_transport ? "Yes" : "No" },
-        { label: "Transport Charge", value: student?.transportCharge ?? student?.transport_charge ?? "-" },
+        { label: "School Transport", value: student?.usesTransport || student?.uses_transport ? "Yes (Active)" : "No" },
+        { label: "Transport Fee", value: student?.transportCharge ?? student?.transport_charge ? `Rs. ${student.transportCharge || student.transport_charge}` : "N/A" },
       ],
     },
   ];
 
   return (
     <View style={styles.profilePageShell}>
+      {/* Top Navigation */}
       <View style={styles.profilePageTopRow}>
         <Pressable onPress={onBack} style={styles.profileBackButton}>
-          <Text style={styles.profileBackButtonText}>Back</Text>
+          <Feather name="arrow-left" size={14} color="#047857" />
+          <Text style={styles.profileBackButtonText}>Dashboard</Text>
         </Pressable>
-        <Text style={styles.profilePageKicker}>Student Profile</Text>
+        <Text style={styles.profilePageKicker}>Official Digital ID</Text>
         <View style={styles.profilePageSpacer} />
       </View>
 
-      <View style={styles.profileHeroCard}>
-        <View style={styles.profileHeroAvatar}>
-          <Image source={getProfilePhotoSource(student)} style={styles.profileHeroAvatarImage} resizeMode="cover" />
+      {/* DIGITAL CAMPUS ID CARD */}
+      <View style={styles.digitalIdCard}>
+        {/* Card Header Strip */}
+        <View style={styles.digitalIdHeader}>
+          <View style={styles.digitalIdHeaderLeft}>
+            <View style={styles.digitalIdHeaderLogoWrap}>
+              <Image source={schoolLogo} style={styles.digitalIdHeaderLogo} resizeMode="contain" />
+            </View>
+            <View>
+              <Text style={styles.digitalIdSchoolName}>{SCHOOL_NAME}</Text>
+              <Text style={styles.digitalIdSubtitle}>STUDENT CAMPUS ID • {academicYear}</Text>
+            </View>
+          </View>
+          <View style={styles.digitalIdChip}>
+            <Text style={styles.digitalIdChipText}>VERIFIED</Text>
+          </View>
         </View>
-        <View style={styles.profileHeroText}>
-          <Text style={styles.profileHeroName}>{getStudentDisplayName(student)}</Text>
-          <Text style={styles.profileHeroMeta}>
-            {student?.class ? `Class ${student.class}${student?.section ? `-${student.section}` : ""}` : "Student"}
+
+        {/* Card Body */}
+        <View style={styles.digitalIdBody}>
+          <View style={styles.digitalIdAvatarWrap}>
+            <Image
+              source={getProfilePhotoSource(student)}
+              style={styles.digitalIdAvatar}
+              resizeMode="cover"
+            />
+            <View style={styles.digitalIdActiveDot}>
+              <Feather name="check" size={10} color="#fff" />
+            </View>
+          </View>
+
+          <View style={styles.digitalIdStudentInfo}>
+            <Text numberOfLines={1} style={styles.digitalIdStudentName}>{studentName}</Text>
+            <View style={styles.digitalIdTagsRow}>
+              <View style={styles.digitalIdTag}>
+                <Text style={styles.digitalIdTagText}>{classLabel}</Text>
+              </View>
+              <View style={styles.digitalIdTag}>
+                <Text style={styles.digitalIdTagText}>Roll #{rollLabel}</Text>
+              </View>
+            </View>
+            <Text style={styles.digitalIdStudentAdm}>Adm ID: {admNo}</Text>
+          </View>
+        </View>
+
+        {/* Decorative Barcode / Serial Row */}
+        <View style={styles.digitalIdBarcodeRow}>
+          <View style={styles.digitalIdBarcodeBars}>
+            <Text style={styles.digitalIdBarcodeSymbol}>||| | |||| || ||| || |||| | ||| |||</Text>
+          </View>
+          <Text style={styles.digitalIdBarcodeNumber}>
+            OFFICIAL DIGITAL BADGE • SPS-{rollLabel}
           </Text>
-          <Text style={styles.profileHeroSubMeta}>Username: {student?.username || "-"}</Text>
         </View>
       </View>
 
+      {/* CATEGORIZED INFORMATION SECTIONS */}
       <View style={styles.profileGrid}>
         {sections.map((section) => (
           <View key={section.title} style={styles.profileSectionCard}>
-            <Text style={styles.profileSectionTitle}>{section.title}</Text>
+            <View style={styles.profileSectionHeaderRow}>
+              <View style={styles.profileSectionIconWrap}>
+                <Feather name={section.icon} size={14} color="#047857" />
+              </View>
+              <Text style={styles.profileSectionTitle}>{section.title}</Text>
+            </View>
+
             <View style={styles.profileFieldGrid}>
               {section.items.map((item) => (
                 <View key={item.label} style={styles.profileFieldCard}>
@@ -1079,23 +1211,49 @@ function StudentProfilePage({ student, onBack, onLogout, onOpenPrivacy, onOpenTe
         ))}
       </View>
 
+      {/* SCHOOL POLICY & HELP MENU */}
       <View style={styles.profileMenuCard}>
-        <Text style={styles.profileMenuTitle}>Profile Menu</Text>
-        <View style={styles.profileMenuGrid}>
-          <Pressable onPress={onOpenPrivacy} style={styles.profileMenuButton}>
-            <Text style={styles.profileMenuButtonText}>Privacy Policy</Text>
+        <Text style={styles.profileMenuTitle}>School Support & Policies</Text>
+        <View style={styles.profileMenuList}>
+          <Pressable onPress={onOpenContact} style={styles.profileMenuItem}>
+            <View style={[styles.profileMenuIconWrap, { backgroundColor: "#ecfdf5" }]}>
+              <Feather name="phone" size={16} color="#047857" />
+            </View>
+            <View style={styles.profileMenuTextWrap}>
+              <Text style={styles.profileMenuLabel}>Contact School Office</Text>
+              <Text style={styles.profileMenuSub}>{SCHOOL_PHONE} • Office Hours</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
           </Pressable>
-          <Pressable onPress={onOpenTerms} style={styles.profileMenuButton}>
-            <Text style={styles.profileMenuButtonText}>Terms & Conditions</Text>
+
+          <Pressable onPress={onOpenPrivacy} style={styles.profileMenuItem}>
+            <View style={[styles.profileMenuIconWrap, { backgroundColor: "#f0fdf4" }]}>
+              <Feather name="shield" size={16} color="#059669" />
+            </View>
+            <View style={styles.profileMenuTextWrap}>
+              <Text style={styles.profileMenuLabel}>Privacy Policy</Text>
+              <Text style={styles.profileMenuSub}>Student data privacy & safety guidelines</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
           </Pressable>
-          <Pressable onPress={onOpenContact} style={styles.profileMenuButton}>
-            <Text style={styles.profileMenuButtonText}>Contact School</Text>
+
+          <Pressable onPress={onOpenTerms} style={styles.profileMenuItem}>
+            <View style={[styles.profileMenuIconWrap, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="file-text" size={16} color="#2563eb" />
+            </View>
+            <View style={styles.profileMenuTextWrap}>
+              <Text style={styles.profileMenuLabel}>Terms & Conditions</Text>
+              <Text style={styles.profileMenuSub}>Usage terms for mobile application</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
           </Pressable>
         </View>
       </View>
 
-      <Pressable onPress={onLogout} style={[styles.logoutButton, styles.profileLogoutButton]}>
-        <Text style={styles.logoutText}>Logout</Text>
+      {/* LOGOUT BUTTON */}
+      <Pressable onPress={onLogout} style={styles.studentLogoutButton}>
+        <Feather name="log-out" size={16} color="#e11d48" />
+        <Text style={styles.studentLogoutButtonText}>Sign Out from Student Portal</Text>
       </Pressable>
     </View>
   );
@@ -1247,17 +1405,23 @@ function Dashboard({ session, onLogout, onOpenPrivacy, onOpenTerms, onOpenContac
                 : session.user?.name || session.user?.email || `${SCHOOL_SHORT_NAME} Mobile`}
             </Text>
             {session.role === "teacher" ? (
-              <View style={styles.roleBadge}>
-                <Text style={styles.roleBadgeText}>Teacher</Text>
+              <View style={styles.teacherHeaderBadge}>
+                <Feather name="award" size={9} color="#047857" />
+                <Text style={styles.teacherHeaderBadgeText}>Faculty Portal</Text>
               </View>
-            ) : null}
+            ) : (
+              <View style={styles.studentHeaderBadge}>
+                <Feather name="shield" size={9} color="#047857" />
+                <Text style={styles.studentHeaderBadgeText}>Student</Text>
+              </View>
+            )}
           </View>
         </View>
         <View style={styles.headerActions}>
           {session.role === "teacher" ? (
-            <Pressable onPress={onLogout} style={styles.dashboardLogoutButton}>
-              <Text style={styles.dashboardLogoutIconText}>⇥</Text>
-              <Text style={styles.dashboardLogoutText}>Logout</Text>
+            <Pressable onPress={onLogout} style={styles.teacherHeaderLogoutBtn}>
+              <Feather name="log-out" size={13} color="#e11d48" />
+              <Text style={styles.teacherHeaderLogoutText}>Logout</Text>
             </Pressable>
           ) : (
             <Pressable
@@ -1273,6 +1437,7 @@ function Dashboard({ session, onLogout, onOpenPrivacy, onOpenTerms, onOpenContac
                   resizeMode="cover"
                 />
               </View>
+              <View style={styles.avatarOnlineDot} />
             </Pressable>
           )}
         </View>
@@ -1311,19 +1476,25 @@ function Dashboard({ session, onLogout, onOpenPrivacy, onOpenTerms, onOpenContac
                   <Pressable
                     key={section.key}
                     onPress={() => setActiveTab(firstTabKey)}
-                    style={[styles.parentTabButton, isActive && styles.parentTabButtonActive]}
+                    style={({ pressed }) => [
+                      styles.parentTabButton,
+                      isActive && styles.parentTabButtonActive,
+                      pressed && styles.parentTabButtonPressed,
+                    ]}
                   >
                     <View style={[styles.parentTabBadge, isActive && styles.parentTabBadgeActive]}>
-                      <Image
-                        source={getSectionIcon(section.key)}
-                        style={[
-                          styles.parentTabBadgeImage,
-                          { tintColor: isActive ? "#fff" : "#63708a" },
-                        ]}
-                        resizeMode="contain"
+                      <Ionicons
+                        name={getSectionVectorIcon(section.key, isActive)}
+                        size={21}
+                        color={isActive ? "#047857" : "#64748b"}
                       />
                     </View>
-                    <Text style={[styles.parentTabText, isActive && styles.parentTabTextActive]}>{section.title}</Text>
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.parentTabText, isActive && styles.parentTabTextActive]}
+                    >
+                      {section.title}
+                    </Text>
                   </Pressable>
                 );
               })}
@@ -1359,34 +1530,72 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
     );
   }, [assignments, selectedKey]);
 
+  const selectedKeyRef = useRef(selectedKey);
+  selectedKeyRef.current = selectedKey;
+
+  const inFlightRef = useRef(false);
+  const bootstrapRef = useRef(null);
+  const studentsCacheRef = useRef({});
+
   const load = useCallback(
-    async ({ silent = false } = {}) => {
-      if (!silent) setLoading(true);
+    async ({ silent = false, keyOverride, force = false } = {}) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+
+      // Don't unmount the whole UI with a full-screen loader if data is already visible
+      if (!silent && students.length === 0) setLoading(true);
       setError("");
       setMessage("");
       setSaved(false);
 
       try {
-        const boot = await getAttendanceBootstrap(session.token);
-        setBootstrap(boot);
-        const nextAssignments = boot?.assignments || [];
-        const nextSelected = nextAssignments.find((item) => assignmentKey(item) === selectedKey) || nextAssignments[0];
+        let currentBoot = bootstrapRef.current;
+        if (!currentBoot || force) {
+          currentBoot = await getAttendanceBootstrap(session.token);
+          bootstrapRef.current = currentBoot;
+          setBootstrap(currentBoot);
+        }
+
+        const nextAssignments = currentBoot?.assignments || [];
+        const activeTargetKey = keyOverride || selectedKeyRef.current;
+        const nextSelected =
+          nextAssignments.find((item) => assignmentKey(item) === activeTargetKey) || nextAssignments[0];
 
         if (nextSelected) {
-          setSelectedKey(assignmentKey(nextSelected));
+          const nextKey = assignmentKey(nextSelected);
+          if (nextKey !== selectedKeyRef.current) {
+            setSelectedKey(nextKey);
+          }
           const scope = assignmentParams(nextSelected);
+
+          let normalizedStudents = force ? null : studentsCacheRef.current[nextKey];
+          const studentPromise = normalizedStudents
+            ? Promise.resolve(null)
+            : getStudents(session.token, scope);
+
+          const recordPromise = getAttendanceRecords(session.token, { ...scope, date });
+
           const [studentResponse, recordResponse] = await Promise.all([
-            getStudents(session.token, scope),
-            getAttendanceRecords(session.token, { ...scope, date }),
+            studentPromise,
+            recordPromise,
           ]);
-          const normalizedStudents = normalizeStudents(studentResponse);
+
+          if (studentResponse) {
+            normalizedStudents = normalizeStudents(studentResponse);
+            studentsCacheRef.current[nextKey] = normalizedStudents;
+          }
+
+          if (normalizedStudents) {
+            setStudents(normalizedStudents);
+          }
+
           const isHolidayDate = Boolean(recordResponse?.isHoliday);
-          setStudents(normalizedStudents);
-          setRecords(recordResponse?.records || []);
+          const nextRecords = recordResponse?.records || [];
+          setRecords(nextRecords);
           setSelectedDateIsHoliday(isHolidayDate);
           setStatuses(
-            normalizedStudents.reduce((map, student) => {
-              const existing = (recordResponse?.records || []).find((record) => record.student_id === student.id);
+            (normalizedStudents || []).reduce((map, student) => {
+              const existing = nextRecords.find((record) => record.student_id === student.id);
               map[student.id] = isHolidayDate ? "" : existing?.status || "present";
               return map;
             }, {}),
@@ -1396,21 +1605,22 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
           setRecords([]);
           setStatuses({});
           setSelectedDateIsHoliday(false);
-          setMessage(boot?.message || "Aapko abhi class/section assign nahi hua hai.");
+          setMessage(currentBoot?.message || "Aapko abhi class/section assign nahi hua hai.");
         }
       } catch (err) {
         setError(err.message || "Teacher data load failed");
       } finally {
+        inFlightRef.current = false;
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [date, selectedKey, session.token],
+    [date, session.token],
   );
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [date, session.token]);
 
   const saveClassAttendance = async () => {
     if (!selectedAssignment) return;
@@ -1435,7 +1645,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
         statuses,
       };
       const response = await saveAttendance(session.token, payload);
-      await load({ silent: true });
+      await load({ silent: true, force: true });
       setMessage(response?.message || "Attendance saved successfully.");
       setSaved(true);
     } catch (err) {
@@ -1449,7 +1659,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
   const refresh = () => {
     setRefreshing(true);
     setSaved(false);
-    load({ silent: true });
+    load({ silent: true, force: true });
   };
 
   if (loading) return <LoadingBlock label="Teacher dashboard loading..." />;
@@ -1469,6 +1679,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
           onOpen={onTabChange}
           records={records}
           students={students}
+          session={session}
         />
       ) : null}
 
@@ -1552,30 +1763,34 @@ function StudentArea({
   const [error, setError] = useState("");
   const [studentProfile, setStudentProfile] = useState(session.user || null);
 
-  const load = useCallback(async () => {
-    setError("");
-    try {
-      const response = await getStudentAttendance(session.token, session.user?.id);
-      setDetail(response);
-      const mergedStudent = {
-        ...(session.user || {}),
-        ...(response?.student || {}),
-      };
-      setStudentProfile(mergedStudent);
-      onStudentLoaded?.(mergedStudent);
-    } catch (err) {
-      setError(err.message || "Student data load failed");
-      setStudentProfile(session.user || null);
-      onStudentLoaded?.(session.user || null);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [onStudentLoaded, session.token, session.user]);
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!silent && !detail) setLoading(true);
+      setError("");
+      try {
+        const response = await getStudentAttendance(session.token, session.user?.id);
+        setDetail(response);
+        const mergedStudent = {
+          ...(session.user || {}),
+          ...(response?.student || {}),
+        };
+        setStudentProfile(mergedStudent);
+        onStudentLoaded?.(mergedStudent);
+      } catch (err) {
+        setError(err.message || "Student data load failed");
+        setStudentProfile(session.user || null);
+        onStudentLoaded?.(session.user || null);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [detail, onStudentLoaded, session.token, session.user?.id],
+  );
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [session.token, session.user?.id]);
 
   useEffect(() => {
     setStudentProfile(session.user || null);
@@ -1629,7 +1844,7 @@ function StudentArea({
     >
       {sectionTabs.length > 1 ? <SectionTabsBar tabs={sectionTabs} activeTab={activeTab} onTabChange={onTabChange} /> : null}
       {error ? <Notice tone="error" text={error} /> : null}
-      {activeTab === "home" ? <StudentHome session={session} student={student} summary={summary} /> : null}
+      {activeTab === "home" ? <StudentHome session={session} student={student} summary={summary} onTabChange={onTabChange} /> : null}
       {activeTab === "attendance" ? <StudentAttendance records={records} summary={summary} /> : null}
       {activeTab === "leave" ? <StudentLeavePanel session={session} student={student} /> : null}
       {activeTab === "holidays" ? <HolidayCalendarPanel session={session} /> : null}
@@ -1647,6 +1862,7 @@ function SectionTabsBar({ tabs, activeTab, onTabChange }) {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sectionTabsScroller} contentContainerStyle={styles.sectionTabsBar}>
         {tabs.map((tab) => {
           const active = activeTab === tab.key;
+          const iconName = getTabIconName(tab.key);
 
           return (
             <Pressable
@@ -1654,7 +1870,7 @@ function SectionTabsBar({ tabs, activeTab, onTabChange }) {
               onPress={() => onTabChange(tab.key)}
               style={[styles.sectionTabButton, active && styles.sectionTabButtonActive]}
             >
-              <View style={[styles.sectionTabIcon, active && styles.sectionTabIconActive]} />
+              <Feather name={iconName} size={13} color={active ? "#ffffff" : "#4b5563"} />
               <Text style={[styles.sectionTabText, active && styles.sectionTabTextActive]}>{tab.label}</Text>
             </Pressable>
           );
@@ -1664,135 +1880,559 @@ function SectionTabsBar({ tabs, activeTab, onTabChange }) {
   );
 }
 
-function TeacherHome({ assignment, onOpen, records, students }) {
+function TeacherHome({ assignment, onOpen, records, students, session }) {
   const summary = summarizeRecords(records);
   const academicYear = assignment?.academic_year || getDefaultAcademicYear();
-  const classLabel = assignment ? `Class ${assignment.class} - ${assignment.section}` : "No assignment";
+  const classLabel = assignment ? `Class ${assignment.class} - ${assignment.section}` : "Assigned Class";
+  const teacherName = session?.user?.name || session?.user?.email?.split("@")[0] || "Faculty Educator";
+
+  const totalStudents = students?.length || 0;
+  const presentCount = summary?.present || 0;
+  const absentCount = summary?.absent || 0;
+  const lateCount = summary?.late || 0;
+  const attendanceRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
 
   return (
     <View style={styles.teacherHomeShell}>
-      <View style={styles.teacherClassCard}>
-        <View style={styles.teacherClassTopRow}>
-          <View style={styles.teacherClassLogoWrap}>
-            <Image source={schoolLogo} style={styles.teacherClassLogo} resizeMode="contain" />
+      {/* 1. TEACHER WORKSPACE HERO CARD */}
+      <View style={styles.teacherHeroCard}>
+        <View style={styles.teacherHeroCardTop}>
+          <View style={styles.teacherHeroBrandWrap}>
+            <View style={styles.teacherHeroLogoWrap}>
+              <Image source={schoolLogo} style={styles.teacherHeroLogo} resizeMode="contain" />
+            </View>
+            <View style={styles.teacherHeroSchoolText}>
+              <Text style={styles.teacherHeroSchoolName}>{SCHOOL_NAME}</Text>
+              <Text style={styles.teacherHeroPortalLabel}>TEACHER WORKSPACE &amp; FACULTY PORTAL</Text>
+            </View>
           </View>
-          <View style={styles.teacherClassTextBlock}>
-            <Text style={styles.teacherClassSchool}>{SCHOOL_NAME}</Text>
-            <Text style={styles.teacherClassMeta}>Teacher Workspace</Text>
+          <View style={styles.teacherVerifiedBadge}>
+            <Feather name="award" size={10} color="#10b981" />
+            <Text style={styles.teacherVerifiedBadgeText}>Faculty Active</Text>
           </View>
         </View>
-        <Text style={styles.teacherClassTitle}>{classLabel}</Text>
-        <View style={styles.teacherClassYearRow}>
-          <Feather name="calendar" size={12} color="#d9e8ff" />
-          <Text style={styles.teacherClassYear}>Academic Year {academicYear}</Text>
+
+        <View style={styles.teacherHeroIdentityRow}>
+          <View style={styles.teacherHeroAvatarBorder}>
+            <View style={styles.teacherHeroAvatarInner}>
+              <Text style={styles.teacherHeroAvatarText}>{getInitials(teacherName)}</Text>
+            </View>
+            <View style={styles.teacherHeroStarBadge}>
+              <Feather name="check" size={10} color="#064e3b" />
+            </View>
+          </View>
+
+          <View style={styles.teacherHeroBio}>
+            <Text style={styles.teacherHeroGreeting}>Welcome back,</Text>
+            <Text numberOfLines={1} style={styles.teacherHeroTeacherName}>
+              {teacherName}
+            </Text>
+            <View style={styles.teacherHeroPillsContainer}>
+              <View style={styles.teacherHeroPill}>
+                <Feather name="book-open" size={10} color="#a7f3d0" />
+                <Text style={styles.teacherHeroPillText}>{classLabel}</Text>
+              </View>
+              <View style={styles.teacherHeroPill}>
+                <Feather name="users" size={10} color="#a7f3d0" />
+                <Text style={styles.teacherHeroPillText}>{totalStudents} Students</Text>
+              </View>
+            </View>
+          </View>
         </View>
-        <View style={styles.teacherClassArt}>
-          <Image source={bookIllustration} style={styles.teacherClassArtImage} resizeMode="contain" />
+
+        <Pressable
+          onPress={() => onOpen?.("attendance")}
+          style={styles.teacherHeroCardFooter}
+        >
+          <View style={styles.teacherHeroFooterLeft}>
+            <Feather name="calendar" size={13} color="#a7f3d0" />
+            <Text style={styles.teacherHeroFooterText}>
+              Academic Year {academicYear} • {classLabel}
+            </Text>
+          </View>
+          <View style={styles.teacherHeroFooterRight}>
+            <Text style={styles.teacherHeroFooterLink}>Take Attendance</Text>
+            <Feather name="arrow-right" size={12} color="#ffd15c" />
+          </View>
+        </Pressable>
+      </View>
+
+      {/* 2. TODAY'S CLASS ATTENDANCE METRICS */}
+      <View style={styles.teacherAttendanceCard}>
+        <View style={styles.teacherCardHeaderRow}>
+          <View style={styles.teacherCardHeaderIcon}>
+            <Feather name="check-square" size={16} color="#047857" />
+          </View>
+          <View style={styles.teacherCardHeaderTitles}>
+            <Text style={styles.teacherCardSectionTitle}>Today's Class Attendance</Text>
+            <Text style={styles.teacherCardSectionMeta}>
+              {totalStudents > 0 ? `${presentCount} of ${totalStudents} students present today` : "No student records"}
+            </Text>
+          </View>
+          <Pressable onPress={() => onOpen?.("attendance")} style={styles.teacherCardHeaderLink}>
+            <Text style={styles.teacherCardHeaderLinkText}>Mark</Text>
+            <Feather name="chevron-right" size={12} color="#047857" />
+          </Pressable>
+        </View>
+
+        <View style={styles.teacherAttendanceMeterBlock}>
+          <View style={styles.teacherAttendanceScoreRow}>
+            <View style={styles.teacherAttendancePercentWrap}>
+              <Text style={styles.teacherAttendancePercentText}>{attendanceRate}%</Text>
+              <Text style={styles.teacherAttendancePercentLabel}>Today's Presence Rate</Text>
+            </View>
+            <View style={styles.teacherAttendanceStatusPill}>
+              <Text style={styles.teacherAttendanceStatusText}>
+                {presentCount} / {totalStudents} Present
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.teacherProgressBarTrack}>
+            <View
+              style={[
+                styles.teacherProgressBarFill,
+                { width: `${Math.min(100, Math.max(4, attendanceRate))}%` },
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* 4 Stat Badges */}
+        <View style={styles.teacherMetricsGrid}>
+          <View style={[styles.teacherMetricPillCard, styles.teacherMetricStudents]}>
+            <Feather name="users" size={14} color="#0284c7" />
+            <Text style={[styles.teacherMetricNum, { color: "#0284c7" }]}>{totalStudents}</Text>
+            <Text style={styles.teacherMetricTag}>Enrolled</Text>
+          </View>
+          <View style={[styles.teacherMetricPillCard, styles.teacherMetricPresent]}>
+            <Feather name="check-circle" size={14} color="#059669" />
+            <Text style={styles.teacherMetricNum}>{presentCount}</Text>
+            <Text style={styles.teacherMetricTag}>Present</Text>
+          </View>
+          <View style={[styles.teacherMetricPillCard, styles.teacherMetricAbsent]}>
+            <Feather name="x-circle" size={14} color="#e11d48" />
+            <Text style={[styles.teacherMetricNum, { color: "#e11d48" }]}>{absentCount}</Text>
+            <Text style={styles.teacherMetricTag}>Absent</Text>
+          </View>
+          <View style={[styles.teacherMetricPillCard, styles.teacherMetricLate]}>
+            <Feather name="clock" size={14} color="#d97706" />
+            <Text style={[styles.teacherMetricNum, { color: "#d97706" }]}>{lateCount}</Text>
+            <Text style={styles.teacherMetricTag}>Late</Text>
+          </View>
         </View>
       </View>
 
-      <View style={styles.teacherStatsGrid}>
-        <View style={[styles.teacherStatCard, styles.teacherStatBlue]}>
-          <View style={styles.teacherStatIconWrap}>
-            <Image source={iconStudents} style={[styles.teacherStatIconImage, { tintColor: "#2a64e8" }]} resizeMode="contain" />
-          </View>
-          <View style={styles.teacherStatBody}>
-            <Text style={styles.teacherStatLabel}>Students</Text>
-            <Text style={styles.teacherStatValue}>{students.length}</Text>
-            <Text style={styles.teacherStatMeta}>Total Students</Text>
-          </View>
-        </View>
-        <View style={[styles.teacherStatCard, styles.teacherStatGreen]}>
-          <View style={styles.teacherStatIconWrap}>
-            <Image source={iconCheckout} style={[styles.teacherStatIconImage, { tintColor: "#18a05e" }]} resizeMode="contain" />
-          </View>
-          <View style={styles.teacherStatBody}>
-            <Text style={styles.teacherStatLabel}>Present</Text>
-            <Text style={styles.teacherStatValue}>{summary.present}</Text>
-            <Text style={styles.teacherStatMeta}>Present Today</Text>
-          </View>
-        </View>
-        <View style={[styles.teacherStatCard, styles.teacherStatRed]}>
-          <View style={styles.teacherStatIconWrap}>
-            <Image source={iconStudents} style={[styles.teacherStatIconImage, { tintColor: "#ef4a4a" }]} resizeMode="contain" />
-          </View>
-          <View style={styles.teacherStatBody}>
-            <Text style={styles.teacherStatLabel}>Absent</Text>
-            <Text style={styles.teacherStatValue}>{summary.absent}</Text>
-            <Text style={styles.teacherStatMeta}>Absent Today</Text>
-          </View>
-        </View>
-        <View style={[styles.teacherStatCard, styles.teacherStatAmber]}>
-          <View style={styles.teacherStatIconWrap}>
-            <Image source={iconHistory} style={[styles.teacherStatIconImage, { tintColor: "#ff9d00" }]} resizeMode="contain" />
-          </View>
-          <View style={styles.teacherStatBody}>
-            <Text style={styles.teacherStatLabel}>Late</Text>
-            <Text style={styles.teacherStatValue}>{summary.late}</Text>
-            <Text style={styles.teacherStatMeta}>Late Today</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.teacherFeatureSection}>
+      {/* 3. CORE TEACHER OPERATIONS (2x2 GRID) */}
+      <View style={styles.teacherServicesSection}>
         <View style={styles.teacherSectionTitleWrap}>
-          <Text style={styles.teacherSectionTitle}>Teacher Features</Text>
-          <View style={styles.teacherSectionUnderline} />
+          <Text style={styles.teacherSectionTitle}>Core Operations</Text>
+          <Text style={styles.teacherSectionMeta}>Essential daily classroom tools</Text>
         </View>
-        <View style={styles.teacherFeatureList}>
-          {teacherFeatures.map((feature) => (
-            <Pressable
-              key={feature.key}
-              onPress={() => onOpen(feature.key)}
-              style={styles.teacherFeatureItem}
-            >
-              <View style={styles.teacherFeatureIcon}>
-                <Image source={getTeacherFeatureIcon(feature.key)} style={styles.teacherFeatureIconImage} resizeMode="contain" />
-              </View>
-              <View style={styles.teacherFeatureBody}>
-                <Text style={styles.teacherFeatureTitle}>{feature.label}</Text>
-                <Text style={styles.teacherFeatureMeta}>{feature.meta}</Text>
-              </View>
-              <Feather name="chevron-right" size={18} color="#7b8797" />
-            </Pressable>
-          ))}
+
+        <View style={styles.teacherServicesGrid}>
+          {/* Card 1: GPS Punch In/Out */}
+          <Pressable
+            onPress={() => onOpen?.("gpsAttendance")}
+            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#ecfdf5" }]}>
+              <Feather name="map-pin" size={20} color="#047857" />
+            </View>
+            <View style={styles.teacherServiceBody}>
+              <Text style={styles.teacherServiceTitle}>GPS Punch</Text>
+              <Text style={styles.teacherServiceSubtitle}>Check In, Out &amp; Leaves</Text>
+            </View>
+            <View style={styles.teacherServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#047857" />
+            </View>
+          </Pressable>
+
+          {/* Card 2: Class Attendance */}
+          <Pressable
+            onPress={() => onOpen?.("attendance")}
+            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#f0fdf4" }]}>
+              <Feather name="check-square" size={20} color="#16a34a" />
+            </View>
+            <View style={styles.teacherServiceBody}>
+              <Text style={styles.teacherServiceTitle}>Class Attendance</Text>
+              <Text style={styles.teacherServiceSubtitle}>Mark daily student register</Text>
+            </View>
+            <View style={styles.teacherServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#16a34a" />
+            </View>
+          </Pressable>
+
+          {/* Card 3: Submit Marks */}
+          <Pressable
+            onPress={() => onOpen?.("submitMarks")}
+            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#eef2ff" }]}>
+              <Feather name="award" size={20} color="#4f46e5" />
+            </View>
+            <View style={styles.teacherServiceBody}>
+              <Text style={styles.teacherServiceTitle}>Submit Marks</Text>
+              <Text style={styles.teacherServiceSubtitle}>Enter terminal exam grades</Text>
+            </View>
+            <View style={styles.teacherServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#4f46e5" />
+            </View>
+          </Pressable>
+
+          {/* Card 4: Reports */}
+          <Pressable
+            onPress={() => onOpen?.("reports")}
+            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#f0fdfa" }]}>
+              <Feather name="bar-chart-2" size={20} color="#0d9488" />
+            </View>
+            <View style={styles.teacherServiceBody}>
+              <Text style={styles.teacherServiceTitle}>Class Reports</Text>
+              <Text style={styles.teacherServiceSubtitle}>Monthly analytics &amp; trends</Text>
+            </View>
+            <View style={styles.teacherServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#0d9488" />
+            </View>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* 4. CLASSROOM MANAGEMENT TOOLS (SECONDARY LIST) */}
+      <View style={styles.teacherToolsSection}>
+        <View style={styles.teacherSectionTitleWrap}>
+          <Text style={styles.teacherSectionTitle}>Classroom Management</Text>
+          <Text style={styles.teacherSectionMeta}>Rosters, scorecards and holiday schedules</Text>
+        </View>
+
+        <View style={styles.teacherToolsList}>
+          <Pressable onPress={() => onOpen?.("students")} style={styles.teacherToolItem}>
+            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="users" size={16} color="#2563eb" />
+            </View>
+            <View style={styles.teacherToolTextWrap}>
+              <Text style={styles.teacherToolLabel}>Enrolled Students Roster</Text>
+              <Text style={styles.teacherToolSub}>View {totalStudents} students with roll and fee status</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
+          </Pressable>
+
+          <Pressable onPress={() => onOpen?.("viewMarks")} style={styles.teacherToolItem}>
+            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#fdf4ff" }]}>
+              <Feather name="file-text" size={16} color="#c026d3" />
+            </View>
+            <View style={styles.teacherToolTextWrap}>
+              <Text style={styles.teacherToolLabel}>View Submitted Marks</Text>
+              <Text style={styles.teacherToolSub}>Review submitted subject and terminal scorecards</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
+          </Pressable>
+
+          <Pressable onPress={() => onOpen?.("history")} style={styles.teacherToolItem}>
+            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#fefce8" }]}>
+              <Feather name="clock" size={16} color="#ca8a04" />
+            </View>
+            <View style={styles.teacherToolTextWrap}>
+              <Text style={styles.teacherToolLabel}>Student Attendance History</Text>
+              <Text style={styles.teacherToolSub}>Individual daily student attendance logs</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
+          </Pressable>
+
+          <Pressable onPress={() => onOpen?.("gpsHistory")} style={styles.teacherToolItem}>
+            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#ecfdf5" }]}>
+              <Feather name="navigation" size={16} color="#059669" />
+            </View>
+            <View style={styles.teacherToolTextWrap}>
+              <Text style={styles.teacherToolLabel}>My Personal GPS History</Text>
+              <Text style={styles.teacherToolSub}>Monthly check-in, check-out and work hours</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
+          </Pressable>
+
+          <Pressable onPress={() => onOpen?.("holidays")} style={styles.teacherToolItem}>
+            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#fff7ed" }]}>
+              <Feather name="sun" size={16} color="#ea580c" />
+            </View>
+            <View style={styles.teacherToolTextWrap}>
+              <Text style={styles.teacherToolLabel}>School Holiday Calendar</Text>
+              <Text style={styles.teacherToolSub}>Official academic holidays and breaks</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="#94a3b8" />
+          </Pressable>
         </View>
       </View>
     </View>
   );
 }
 
-function StudentHome({ session, student, summary }) {
-  const workingDays = Number(summary?.workingDays || summary.present + summary.absent + summary.late || 0);
-  const percentage = Number(summary?.percentage || (workingDays ? Math.round((summary.present / workingDays) * 100) : 0));
+function StudentHome({ session, student, summary, onTabChange }) {
+  const workingDays = Number(
+    summary?.workingDays ||
+      Number(summary?.present || 0) + Number(summary?.absent || 0) + Number(summary?.late || 0) ||
+      0
+  );
+  const percentage = Number(
+    summary?.percentage ||
+      (workingDays > 0 ? Math.round((Number(summary.present || 0) / workingDays) * 100) : 0)
+  );
+  const studentName = getStudentDisplayName(student);
+  const academicYear = student?.academicYear || student?.academic_year || getDefaultAcademicYear();
+  const classLabel = student?.class ? `Class ${student.class}${student?.section ? ` - ${student.section}` : ""}` : "Class -";
+  const rollLabel = student?.rollNo || student?.roll_no ? `Roll #${student?.rollNo || student?.roll_no}` : "Roll -";
+  const studentIdLabel = student?.admissionNumber || student?.admission_number || student?.username || "SPS-STU";
+
+  const isGreat = percentage >= 80;
+  const isOk = percentage >= 70 && percentage < 80;
+  const ratingText = workingDays === 0 ? "Tracking Session Active" : isGreat ? "Excellent Track • Exam Ready" : isOk ? "Good Standing • Maintain 75%+" : "Low Attendance • Attention Needed";
 
   return (
-    <View>
-      <View style={styles.heroPanel}>
-        <View style={styles.heroBrandRow}>
-          <View style={styles.heroLogoWrap}>
-            <Image source={schoolLogo} style={styles.heroLogo} resizeMode="contain" />
+    <View style={styles.studentHomeShell}>
+      {/* 1. DIGITAL STUDENT ID CARD HERO */}
+      <View style={styles.studentHeroCard}>
+        <View style={styles.studentHeroCardTop}>
+          <View style={styles.studentHeroBrandWrap}>
+            <View style={styles.studentHeroLogoWrap}>
+              <Image source={schoolLogo} style={styles.studentHeroLogo} resizeMode="contain" />
+            </View>
+            <View style={styles.studentHeroSchoolText}>
+              <Text style={styles.studentHeroSchoolName}>{SCHOOL_NAME}</Text>
+              <Text style={styles.studentHeroPortalLabel}>OFFICIAL STUDENT PORTAL</Text>
+            </View>
           </View>
-          <View style={styles.rowBody}>
-            <Text style={styles.panelEyebrow}>{SCHOOL_NAME}</Text>
-            <Text style={styles.panelSubEyebrow}>Student Profile</Text>
+          <View style={styles.studentVerifiedBadge}>
+            <Feather name="shield" size={10} color="#10b981" />
+            <Text style={styles.studentVerifiedBadgeText}>Verified</Text>
           </View>
         </View>
-        <Text style={styles.panelTitle}>{student?.name || "Student"}</Text>
-        <Text style={styles.panelMeta}>
-          Class {student?.class || "-"} - {student?.section || "-"} | Roll {student?.roll_no || student?.rollNo || "-"}
+
+        <View style={styles.studentHeroIdentityRow}>
+          <View style={styles.studentHeroAvatarBorder}>
+            <Image
+              source={getProfilePhotoSource(student)}
+              style={styles.studentHeroAvatarImg}
+              resizeMode="cover"
+            />
+            <View style={styles.studentHeroStarBadge}>
+              <Feather name="star" size={10} color="#064e3b" />
+            </View>
+          </View>
+
+          <View style={styles.studentHeroBio}>
+            <Text style={styles.studentHeroGreeting}>Welcome back,</Text>
+            <Text numberOfLines={1} style={styles.studentHeroStudentName}>
+              {studentName}
+            </Text>
+            <View style={styles.studentHeroPillsContainer}>
+              <View style={styles.studentHeroPill}>
+                <Feather name="book-open" size={10} color="#a7f3d0" />
+                <Text style={styles.studentHeroPillText}>{classLabel}</Text>
+              </View>
+              <View style={styles.studentHeroPill}>
+                <Text style={styles.studentHeroPillText}>{rollLabel}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <Pressable
+          onPress={() => onTabChange?.("profile")}
+          style={styles.studentHeroCardFooter}
+        >
+          <View style={styles.studentHeroFooterLeft}>
+            <Feather name="credit-card" size={13} color="#a7f3d0" />
+            <Text style={styles.studentHeroFooterText}>
+              ID: {studentIdLabel} • Session {academicYear}
+            </Text>
+          </View>
+          <View style={styles.studentHeroFooterRight}>
+            <Text style={styles.studentHeroFooterLink}>Digital ID</Text>
+            <Feather name="arrow-right" size={12} color="#ffd15c" />
+          </View>
+        </Pressable>
+      </View>
+
+      {/* 2. ATTENDANCE PERFORMANCE HEALTH CARD */}
+      <View style={styles.studentAttendanceCard}>
+        <View style={styles.studentCardHeaderRow}>
+          <View style={styles.studentCardHeaderIcon}>
+            <Feather name="calendar" size={16} color="#047857" />
+          </View>
+          <View style={styles.studentCardHeaderTitles}>
+            <Text style={styles.studentCardSectionTitle}>Attendance Overview</Text>
+            <Text style={styles.studentCardSectionMeta}>{ratingText}</Text>
+          </View>
+          <Pressable onPress={() => onTabChange?.("attendance")} style={styles.studentCardHeaderLink}>
+            <Text style={styles.studentCardHeaderLinkText}>Details</Text>
+            <Feather name="chevron-right" size={12} color="#047857" />
+          </Pressable>
+        </View>
+
+        <View style={styles.studentAttendanceMeterBlock}>
+          <View style={styles.studentAttendanceScoreRow}>
+            <View style={styles.studentAttendancePercentWrap}>
+              <Text style={styles.studentAttendancePercentText}>{percentage}%</Text>
+              <Text style={styles.studentAttendancePercentLabel}>Academic Year Score</Text>
+            </View>
+            <View style={styles.studentAttendanceStatusPill}>
+              <Text style={styles.studentAttendanceStatusText}>
+                {summary.present || 0} / {workingDays || 0} Attended
+              </Text>
+            </View>
+          </View>
+
+          {/* Dynamic Progress Bar */}
+          <View style={styles.studentProgressBarTrack}>
+            <View
+              style={[
+                styles.studentProgressBarFill,
+                { width: `${Math.min(100, Math.max(4, percentage))}%` },
+                percentage < 75 && styles.studentProgressBarLow,
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* 4 Attendance Metrics in Grid */}
+        <View style={styles.studentMetricsGrid}>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricPresent]}>
+            <Feather name="check-circle" size={14} color="#059669" />
+            <Text style={styles.studentMetricNum}>{summary.present || 0}</Text>
+            <Text style={styles.studentMetricTag}>Present</Text>
+          </View>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricAbsent]}>
+            <Feather name="x-circle" size={14} color="#e11d48" />
+            <Text style={[styles.studentMetricNum, { color: "#e11d48" }]}>{summary.absent || 0}</Text>
+            <Text style={styles.studentMetricTag}>Absent</Text>
+          </View>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricLate]}>
+            <Feather name="clock" size={14} color="#d97706" />
+            <Text style={[styles.studentMetricNum, { color: "#d97706" }]}>{summary.late || 0}</Text>
+            <Text style={styles.studentMetricTag}>Late</Text>
+          </View>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricDays]}>
+            <Feather name="calendar" size={14} color="#0284c7" />
+            <Text style={[styles.studentMetricNum, { color: "#0284c7" }]}>{workingDays}</Text>
+            <Text style={styles.studentMetricTag}>Total Days</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* 3. QUICK SERVICES / SHORTCUTS GRID */}
+      <View style={styles.studentServicesSection}>
+        <View style={styles.studentSectionTitleWrap}>
+          <Text style={styles.studentSectionTitle}>Campus Services</Text>
+          <Text style={styles.studentSectionMeta}>Instant access to student records</Text>
+        </View>
+
+        <View style={styles.studentServicesGrid}>
+          {/* Card 1: Fee Portal */}
+          <Pressable
+            onPress={() => onTabChange?.("fees")}
+            style={({ pressed }) => [styles.studentServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.studentServiceIconWrap, { backgroundColor: "#ecfdf5" }]}>
+              <Feather name="credit-card" size={20} color="#047857" />
+            </View>
+            <View style={styles.studentServiceBody}>
+              <Text style={styles.studentServiceTitle}>Fee Portal</Text>
+              <Text style={styles.studentServiceSubtitle}>Dues, Online Pay & Receipts</Text>
+            </View>
+            <View style={styles.studentServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#047857" />
+            </View>
+          </Pressable>
+
+          {/* Card 2: Exam Results */}
+          <Pressable
+            onPress={() => onTabChange?.("results")}
+            style={({ pressed }) => [styles.studentServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.studentServiceIconWrap, { backgroundColor: "#eef2ff" }]}>
+              <Feather name="award" size={20} color="#4f46e5" />
+            </View>
+            <View style={styles.studentServiceBody}>
+              <Text style={styles.studentServiceTitle}>Report Cards</Text>
+              <Text style={styles.studentServiceSubtitle}>Terminal Marks & Progress</Text>
+            </View>
+            <View style={styles.studentServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#4f46e5" />
+            </View>
+          </Pressable>
+
+          {/* Card 3: Attendance */}
+          <Pressable
+            onPress={() => onTabChange?.("attendance")}
+            style={({ pressed }) => [styles.studentServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.studentServiceIconWrap, { backgroundColor: "#f0fdfa" }]}>
+              <Feather name="calendar" size={20} color="#0d9488" />
+            </View>
+            <View style={styles.studentServiceBody}>
+              <Text style={styles.studentServiceTitle}>Attendance Log</Text>
+              <Text style={styles.studentServiceSubtitle}>Day-wise monthly records</Text>
+            </View>
+            <View style={styles.studentServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#0d9488" />
+            </View>
+          </Pressable>
+
+          {/* Card 4: Leave & Holidays */}
+          <Pressable
+            onPress={() => onTabChange?.("leave")}
+            style={({ pressed }) => [styles.studentServiceCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.studentServiceIconWrap, { backgroundColor: "#fefce8" }]}>
+              <Feather name="send" size={20} color="#ca8a04" />
+            </View>
+            <View style={styles.studentServiceBody}>
+              <Text style={styles.studentServiceTitle}>Apply Leave</Text>
+              <Text style={styles.studentServiceSubtitle}>Leave status & School calendar</Text>
+            </View>
+            <View style={styles.studentServiceArrowWrap}>
+              <Feather name="arrow-up-right" size={14} color="#ca8a04" />
+            </View>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* 4. NOTICES & ANNOUNCEMENTS */}
+      <View style={styles.studentNoticeSection}>
+        <View style={styles.studentSectionTitleWrap}>
+          <Text style={styles.studentSectionTitle}>Notice Board & Alerts</Text>
+          <Text style={styles.studentSectionMeta}>Official announcements from administration</Text>
+        </View>
+        <StudentNotificationsPanel session={session} limit={6} />
+      </View>
+
+      {/* 5. CAMPUS HELPDESK INFO BANNER */}
+      <View style={styles.studentHelpdeskCard}>
+        <View style={styles.studentHelpdeskTop}>
+          <Feather name="help-circle" size={16} color="#047857" />
+          <Text style={styles.studentHelpdeskTitle}>School Helpdesk & Support</Text>
+        </View>
+        <Text style={styles.studentHelpdeskBody}>
+          For fee queries, bus routes, or technical issues, contact the school office.
         </Text>
-      </View>
-
-      <View style={styles.metricGrid}>
-        <MetricCard label="Attendance" value={`${percentage}%`} tone="teal" />
-        <MetricCard label="Present" value={summary.present || 0} tone="green" />
-        <MetricCard label="Absent" value={summary.absent || 0} tone="red" />
-        <MetricCard label="Late" value={summary.late || 0} tone="amber" />
-      </View>
-
-      <View style={styles.homeSectionCard}>
-        <StudentNotificationsPanel session={session} limit={8} />
+        <View style={styles.studentHelpdeskRow}>
+          <Pressable
+            onPress={() => Linking.openURL(`tel:${SCHOOL_PHONE}`).catch(() => {})}
+            style={styles.studentHelpdeskBtn}
+          >
+            <Feather name="phone" size={12} color="#047857" />
+            <Text style={styles.studentHelpdeskBtnText}>{SCHOOL_PHONE}</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => Linking.openURL(`mailto:${SCHOOL_EMAIL}`).catch(() => {})}
+            style={styles.studentHelpdeskBtn}
+          >
+            <Feather name="mail" size={12} color="#047857" />
+            <Text style={styles.studentHelpdeskBtnText}>Email Office</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -1855,13 +2495,44 @@ function AttendanceMarker({
         <Notice tone="info" text="Holiday hai. Is date ka attendance record save nahi hoga." />
       ) : null}
 
+      {students.length && !isHoliday ? (
+        <View style={styles.attendanceBulkRow}>
+          <Text style={styles.attendanceBulkLabel}>Quick Fill All:</Text>
+          <View style={styles.attendanceBulkButtons}>
+            <Pressable
+              disabled={disabled || saving}
+              onPress={() => students.forEach((s) => onStatusChange(s.id, "present"))}
+              style={[styles.attendanceBulkBtn, styles.attendanceBulkPresent]}
+            >
+              <Feather name="check-circle" size={12} color="#047857" />
+              <Text style={styles.attendanceBulkBtnTextPresent}>All Present</Text>
+            </Pressable>
+            <Pressable
+              disabled={disabled || saving}
+              onPress={() => students.forEach((s) => onStatusChange(s.id, "absent"))}
+              style={[styles.attendanceBulkBtn, styles.attendanceBulkAbsent]}
+            >
+              <Feather name="x-circle" size={12} color="#e11d48" />
+              <Text style={styles.attendanceBulkBtnTextAbsent}>All Absent</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
       {students.length ? (
         students.map((student) => (
           <View key={student.id} style={styles.attendanceCard}>
             <View style={styles.attendanceHeader}>
-              <View>
-                <Text style={styles.rowTitle}>{student.name || "Student"}</Text>
-                <Text style={styles.rowMeta}>Roll {student.rollNo || "-"}</Text>
+              <View style={styles.attendanceStudentInfo}>
+                <View style={styles.attendanceAvatar}>
+                  <Text style={styles.attendanceAvatarText}>{getInitials(student.name)}</Text>
+                </View>
+                <View>
+                  <Text style={styles.rowTitle}>{student.name || "Student"}</Text>
+                  <Text style={styles.rowMeta}>
+                    Roll #{student.rollNo || student.roll_no || "-"} • {student.class || ""} {student.section || ""}
+                  </Text>
+                </View>
               </View>
             </View>
             {isHoliday ? (
@@ -2078,7 +2749,7 @@ function TeacherGpsAttendancePanel({ session }) {
       {lockedRequest ? (
         <View style={styles.marksCard}>
           <View style={styles.inlineTitleRow}>
-            <Feather name="alert-triangle" size={18} color="#1458bf" />
+            <Feather name="alert-triangle" size={18} color="#047857" />
             <Text style={styles.sectionTitle}>Checkout Missing</Text>
           </View>
           <Text style={styles.rowMeta}>
@@ -2142,7 +2813,7 @@ function TeacherGpsAttendancePanel({ session }) {
             (saving || !settings || Boolean(attendance?.check_in_at) || Boolean(lockedRequest)) && styles.disabledButton,
           ]}
         >
-          <Feather name="log-in" size={18} color="#1458bf" />
+          <Feather name="log-in" size={18} color="#047857" />
           <Text style={styles.actionButtonText}>Check In</Text>
         </Pressable>
         <Pressable
@@ -2213,7 +2884,7 @@ function TeacherGpsAttendancePanel({ session }) {
 
       <View style={[styles.list, styles.topGap]}>
         <View style={styles.inlineTitleRow}>
-          <Feather name="clock" size={18} color="#1458bf" />
+          <Feather name="clock" size={18} color="#047857" />
           <Text style={styles.sectionTitle}>Leave Status</Text>
         </View>
         {leaves.length ? leaves.slice(0, 5).map((leave) => (
@@ -2409,27 +3080,62 @@ function TeacherGpsHistoryPanel({ session }) {
   );
 }
 
+const TERMINAL_TABS = [
+  { key: "First", label: "1st Term" },
+  { key: "Second", label: "2nd Term" },
+  { key: "Third", label: "3rd Term" },
+  { key: "Annual", label: "Annual Exam" },
+];
+
+const getSubjectIcon = (subjectName = "") => {
+  const s = String(subjectName).toLowerCase();
+  if (s.includes("math") || s.includes("arith")) return "hash";
+  if (s.includes("eng") || s.includes("urdu") || s.includes("hindi") || s.includes("sanskrit") || s.includes("lang")) return "book-open";
+  if (s.includes("sci") || s.includes("phys") || s.includes("chem") || s.includes("bio")) return "activity";
+  if (s.includes("draw") || s.includes("art")) return "feather";
+  if (s.includes("comp") || s.includes("it")) return "cpu";
+  if (s.includes("soc") || s.includes("hist") || s.includes("geog") || s.includes("civ")) return "globe";
+  return "book";
+};
+
+const getMarksGrade = (percentage) => {
+  if (percentage >= 90) return { grade: "A+", label: "Outstanding", color: "#047857", bg: "#ecfdf5" };
+  if (percentage >= 80) return { grade: "A", label: "Excellent", color: "#059669", bg: "#ecfdf5" };
+  if (percentage >= 70) return { grade: "B+", label: "Very Good", color: "#0284c7", bg: "#f0f9ff" };
+  if (percentage >= 60) return { grade: "B", label: "Good", color: "#2563eb", bg: "#eff6ff" };
+  if (percentage >= 50) return { grade: "C", label: "Average", color: "#d97706", bg: "#fffbeb" };
+  if (percentage >= 33) return { grade: "D", label: "Pass", color: "#ea580c", bg: "#fff7ed" };
+  return { grade: "F", label: "Fail", color: "#e11d48", bg: "#fff1f2" };
+};
+
 function SubmitMarksPanel({ assignment, session, students }) {
   const [terminal, setTerminal] = useState("First");
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [rollNo, setRollNo] = useState("");
-  const [terminalOpen, setTerminalOpen] = useState(false);
   const [subjects, setSubjects] = useState([]);
   const [marks, setMarks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [showRoster, setShowRoster] = useState(false);
+  const [studentSearch, setStudentSearch] = useState("");
+
+  const [existingMarksData, setExistingMarksData] = useState(null);
+
+  const academicYear = assignment?.academic_year || getDefaultAcademicYear();
 
   useEffect(() => {
     if (!students.length) return;
-    const selected = students.find((student) => student.id === selectedStudentId) || students[0];
-    setSelectedStudentId(selected.id);
-    setRollNo(String(selected.rollNo || ""));
-  }, [students, selectedStudentId]);
+    const exists = students.some((s) => s.id === selectedStudentId);
+    if (!exists) {
+      setSelectedStudentId(students[0].id);
+      setRollNo(String(students[0].rollNo || ""));
+    }
+  }, [students]);
 
   const loadSubjects = useCallback(async () => {
-    if (!assignment) return;
+    if (!assignment?.class) return;
     setLoading(true);
     setError("");
     setMessage("");
@@ -2456,21 +3162,108 @@ function SubmitMarksPanel({ assignment, session, students }) {
     } finally {
       setLoading(false);
     }
-  }, [assignment, session.token]);
+  }, [assignment?.class, assignment?.section, session.token]);
 
   useEffect(() => {
     loadSubjects();
   }, [loadSubjects]);
+
+  const loadExistingMarks = useCallback(async () => {
+    if (!assignment?.class || !assignment?.section || !terminal) return;
+    try {
+      const response = await getMarks(session.token, {
+        class: assignment.class,
+        section: assignment.section,
+        terminal,
+      });
+      setExistingMarksData(response);
+    } catch {
+      // Non-critical, ignore
+    }
+  }, [assignment?.class, assignment?.section, session.token, terminal]);
+
+  useEffect(() => {
+    loadExistingMarks();
+  }, [loadExistingMarks]);
+
+  // When selected student, terminal, subjects, or existingMarksData change, populate marks
+  useEffect(() => {
+    if (!subjects.length || !selectedStudentId) return;
+
+    const studentRecord = existingMarksData?.students?.find(
+      (s) => s.student_id === selectedStudentId || String(s.roll_no) === String(rollNo),
+    );
+
+    const existingStudentMarks = studentRecord?.marks || [];
+
+    setMarks(
+      subjects.map((subject) => {
+        const found = existingStudentMarks.find(
+          (m) =>
+            m.subject_id === subject.id ||
+            String(m.subject_name || "").toLowerCase() === String(subject.name || "").toLowerCase() ||
+            String(m.subject_code || "").toLowerCase() === String(subject.code || "").toLowerCase(),
+        );
+
+        return {
+          subject_name: subject.name,
+          subject_code: subject.code,
+          external_marks:
+            found && found.external_marks !== null && found.external_marks !== undefined
+              ? String(found.external_marks)
+              : "",
+          internal_marks:
+            found && found.internal_marks !== null && found.internal_marks !== undefined
+              ? String(found.internal_marks)
+              : "",
+        };
+      }),
+    );
+  }, [selectedStudentId, terminal, existingMarksData, subjects]);
+
+  const isEditingExisting = useMemo(() => {
+    const studentRecord = existingMarksData?.students?.find(
+      (s) => s.student_id === selectedStudentId || String(s.roll_no) === String(rollNo),
+    );
+    return Boolean(studentRecord?.marks?.length);
+  }, [existingMarksData, selectedStudentId, rollNo]);
+
+  const selectStudent = (student) => {
+    if (!student) return;
+    setSelectedStudentId(student.id);
+    setRollNo(String(student.rollNo || ""));
+    setError("");
+    setMessage("");
+    setShowRoster(false);
+  };
+
+  const currentIndex = students.findIndex((s) => s.id === selectedStudentId);
+  const selectedStudent = students[currentIndex >= 0 ? currentIndex : 0] || students[0];
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < students.length - 1;
+  const nextStudent = hasNext ? students[currentIndex + 1] : null;
+
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch.trim()) return students;
+    const q = studentSearch.toLowerCase();
+    return students.filter(
+      (s) =>
+        String(s.name || "").toLowerCase().includes(q) ||
+        String(s.rollNo || "").toLowerCase().includes(q) ||
+        String(s.admissionNumber || "").toLowerCase().includes(q),
+    );
+  }, [students, studentSearch]);
 
   const updateMark = (index, field, value) => {
     const subject = subjects[index];
     const rules = getSubjectRules(subject?.name);
     const cleanValue = String(value || "").replace(/[^\d]/g, "");
     const numericValue = cleanValue === "" ? "" : Number(cleanValue);
+    const maxAllowed = field === "external_marks" ? rules.externalMax : rules.internalMax;
 
     if (field === "internal_marks" && !rules.internalAllowed) return;
-    if (numericValue !== "" && numericValue > (field === "external_marks" ? rules.externalMax : rules.internalMax)) {
-      setError(`${subject?.name || "Subject"} max ${field === "external_marks" ? rules.externalMax : rules.internalMax} marks allowed hai.`);
+    if (numericValue !== "" && numericValue > maxAllowed) {
+      setError(`${subject?.name || "Subject"}: Max ${maxAllowed} marks allowed for ${field === "external_marks" ? "Theory" : "Internal"}.`);
       return;
     }
 
@@ -2481,6 +3274,46 @@ function SubmitMarksPanel({ assignment, session, students }) {
       return next;
     });
   };
+
+  const clearCurrentMarks = () => {
+    setMarks(
+      subjects.map((subject) => ({
+        subject_name: subject.name,
+        subject_code: subject.code,
+        external_marks: "",
+        internal_marks: "",
+      })),
+    );
+    setError("");
+    setMessage("Marks cleared.");
+  };
+
+  // Live Performance Calculations
+  const totalObtained = useMemo(() => {
+    return marks.reduce((sum, mark) => {
+      const ext = Number(mark.external_marks || 0);
+      const int = Number(mark.internal_marks || 0);
+      return sum + ext + int;
+    }, 0);
+  }, [marks]);
+
+  const totalMax = useMemo(() => {
+    return subjects.reduce((sum, subject) => {
+      const rules = getSubjectRules(subject?.name);
+      return sum + rules.externalMax + (rules.internalAllowed ? rules.internalMax : 0);
+    }, 0);
+  }, [subjects]);
+
+  const hasEnteredAnyMarks = useMemo(() => {
+    return marks.some((m) => m.external_marks !== "" || m.internal_marks !== "");
+  }, [marks]);
+
+  const enteredSubjectsCount = useMemo(() => {
+    return marks.filter((m) => m.external_marks !== "" || m.internal_marks !== "").length;
+  }, [marks]);
+
+  const percentage = totalMax > 0 ? Math.round((totalObtained / totalMax) * 100) : 0;
+  const gradeInfo = getMarksGrade(percentage);
 
   const saveMarks = async () => {
     if (!assignment) {
@@ -2524,7 +3357,8 @@ function SubmitMarksPanel({ assignment, session, students }) {
         roll_no: parsedRollNo,
         marks: marksPayload,
       });
-      setMessage(response?.message || "Marks submitted successfully.");
+      setMessage(response?.message || `Marks saved successfully for ${selectedStudent?.name || "Student"}!`);
+      await loadExistingMarks();
     } catch (err) {
       setError(err.message || "Marks submit failed");
     } finally {
@@ -2537,110 +3371,280 @@ function SubmitMarksPanel({ assignment, session, students }) {
   }
 
   return (
-    <View>
-      <View style={styles.inlineTitleRow}>
-        <Feather name="edit" size={18} color="#1458bf" />
-        <Text style={styles.sectionTitle}>Submit Marks</Text>
-      </View>
-      <View style={styles.inlineField}>
-        <Text style={styles.inputLabel}>Terminal</Text>
-        <View style={styles.dropdownWrap}>
-          <Pressable
-            onPress={() => {
-              setTerminalOpen((prev) => !prev);
-            }}
-            style={[styles.input, styles.dropdownButton, terminalOpen && styles.dropdownButtonActive]}
-          >
-            <Text style={styles.dropdownButtonText}>{terminal || "Select terminal"}</Text>
-            <Text style={styles.dropdownChevron}>{terminalOpen ? "^" : "v"}</Text>
-          </Pressable>
-          {terminalOpen ? (
-            <View style={styles.dropdownMenu}>
-              {terminals.map((item) => {
-                const active = terminal === item;
-                return (
-                  <Pressable
-                    key={item}
-                    onPress={() => {
-                      setTerminal(item);
-                      setTerminalOpen(false);
-                    }}
-                    style={[styles.dropdownItem, active && styles.dropdownItemActive]}
-                  >
-                    <Text style={[styles.dropdownItemText, active && styles.dropdownItemTextActive]}>{item}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
+    <View style={styles.marksPanelContainer}>
+      {/* 1. HERO CARD: EXAM ASSESSMENT & TERMINAL SELECTOR */}
+      <View style={styles.marksHeroShell}>
+        <View style={styles.marksHeroTop}>
+          <View style={styles.marksHeroBadge}>
+            <Feather name="award" size={11} color="#a7f3d0" />
+            <Text style={styles.marksHeroBadgeText}>
+              Class {assignment.class} - {assignment.section} • Session {academicYear}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.marksHeroTitle}>Student Exam Marks Entry</Text>
+        <Text style={styles.marksHeroSub}>Select evaluation terminal & enter subject scores</Text>
+
+        {/* Terminal Segmented Tabs */}
+        <View style={styles.marksTerminalPillsRow}>
+          {TERMINAL_TABS.map((item) => {
+            const active = terminal === item.key;
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => {
+                  setTerminal(item.key);
+                  setMessage("");
+                  setError("");
+                }}
+                style={[styles.marksTerminalPill, active && styles.marksTerminalPillActive]}
+              >
+                <Text style={[styles.marksTerminalPillText, active && styles.marksTerminalPillTextActive]}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
-      <StudentDropdown
-        selectedStudentId={selectedStudentId}
-        students={students}
-        onSelect={(student) => {
-          setSelectedStudentId(student.id);
-          setRollNo(String(student.rollNo || ""));
-        }}
-      />
+      {/* 2. STUDENT SPOTLIGHT & STEPPER CARD */}
+      <View style={styles.marksStudentSpotlightCard}>
+        <View style={styles.marksStudentMainRow}>
+          <View style={styles.marksStudentAvatarWrap}>
+            <Text style={styles.marksStudentAvatarText}>{getInitials(selectedStudent?.name)}</Text>
+          </View>
 
-      <View style={styles.inlineField}>
-        <Text style={styles.inputLabel}>Roll No</Text>
-        <TextInput
-          keyboardType="numeric"
-          onChangeText={setRollNo}
-          placeholder="Roll number"
-          placeholderTextColor="#8a8f98"
-          style={styles.input}
-          value={rollNo}
-        />
+          <View style={styles.marksStudentInfoCol}>
+            <Text numberOfLines={1} style={styles.marksStudentName}>
+              {selectedStudent?.name || "Select Student"}
+            </Text>
+            <View style={styles.marksStudentTagsRow}>
+              <View style={styles.marksStudentRollPill}>
+                <Text style={styles.marksStudentRollText}>Roll #{selectedStudent?.rollNo || "-"}</Text>
+              </View>
+              {isEditingExisting ? (
+                <View style={[styles.marksStudentRollPill, { backgroundColor: "#f0f9ff", borderColor: "#bae6fd" }]}>
+                  <Text style={[styles.marksStudentRollText, { color: "#0284c7" }]}>Edit Mode</Text>
+                </View>
+              ) : (
+                <View style={[styles.marksStudentRollPill, { backgroundColor: "#fefce8", borderColor: "#fef08a" }]}>
+                  <Text style={[styles.marksStudentRollText, { color: "#854d0e" }]}>New Entry</Text>
+                </View>
+              )}
+              {selectedStudent?.admissionNumber ? (
+                <Text style={styles.marksStudentAdmText}>Adm: {selectedStudent.admissionNumber}</Text>
+              ) : null}
+            </View>
+          </View>
+        </View>
+
+        {/* Stepper Navigation: Prev < | Student 3 of 20 | Next > */}
+        <View style={styles.marksStepperRow}>
+          <Pressable
+            disabled={!hasPrev || saving}
+            onPress={() => hasPrev && selectStudent(students[currentIndex - 1])}
+            style={[styles.marksStepperBtn, (!hasPrev || saving) && styles.marksStepperBtnDisabled]}
+          >
+            <Feather name="chevron-left" size={14} color="#047857" />
+            <Text style={styles.marksStepperBtnText}>Prev</Text>
+          </Pressable>
+
+          <Text style={styles.marksStepperCounter}>
+            Student {currentIndex >= 0 ? currentIndex + 1 : 1} of {students.length}
+          </Text>
+
+          <Pressable
+            disabled={!hasNext || saving}
+            onPress={() => hasNext && selectStudent(students[currentIndex + 1])}
+            style={[styles.marksStepperBtn, (!hasNext || saving) && styles.marksStepperBtnDisabled]}
+          >
+            <Text style={styles.marksStepperBtnText}>Next</Text>
+            <Feather name="chevron-right" size={14} color="#047857" />
+          </Pressable>
+        </View>
+
+        {/* Quick Roster Dropdown / Search Toggle */}
+        <Pressable
+          onPress={() => setShowRoster((prev) => !prev)}
+          style={styles.marksRosterToggle}
+        >
+          <Feather name={showRoster ? "chevron-up" : "search"} size={12} color="#047857" />
+          <Text style={styles.marksRosterToggleText}>
+            {showRoster ? "Hide Student Roster" : "Search / Pick Another Student"}
+          </Text>
+        </Pressable>
+
+        {showRoster ? (
+          <View style={styles.marksRosterSheet}>
+            <TextInput
+              onChangeText={setStudentSearch}
+              placeholder="Search by name or roll number..."
+              placeholderTextColor="#94a3b8"
+              style={styles.marksRosterSearchInput}
+              value={studentSearch}
+            />
+            <ScrollView nestedScrollEnabled style={{ maxHeight: 160 }}>
+              {filteredStudents.map((s) => {
+                const active = s.id === selectedStudentId;
+                return (
+                  <Pressable
+                    key={s.id}
+                    onPress={() => selectStudent(s)}
+                    style={[styles.marksRosterItem, active && styles.marksRosterItemActive]}
+                  >
+                    <Text style={styles.marksRosterItemName}>{s.name}</Text>
+                    <Text style={styles.marksRosterItemMeta}>Roll #{s.rollNo || "-"}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
       </View>
 
-      {error ? <Notice tone="error" text={error} /> : null}
-      {message ? <Notice tone="info" text={message} /> : null}
-      {loading ? <LoadingBlock label="Subjects loading..." /> : null}
+      {/* 3. LIVE SCORECARD PREVIEW */}
+      {hasEnteredAnyMarks ? (
+        <View style={styles.marksSummaryCard}>
+          <View style={styles.marksSummaryHeader}>
+            <Text style={styles.marksSummaryHeaderTitle}>Live Evaluation Preview</Text>
+            <View style={[styles.teacherAttendanceStatusPill, { backgroundColor: gradeInfo.bg, borderColor: gradeInfo.color }]}>
+              <Text style={[styles.teacherAttendanceStatusText, { color: gradeInfo.color }]}>
+                Grade {gradeInfo.grade} • {gradeInfo.label}
+              </Text>
+            </View>
+          </View>
 
+          <View style={styles.marksSummaryGrid}>
+            <View style={styles.marksSummaryBox}>
+              <Text style={styles.marksSummaryBoxNum}>{totalObtained} / {totalMax}</Text>
+              <Text style={styles.marksSummaryBoxLabel}>Total Marks</Text>
+            </View>
+            <View style={styles.marksSummaryBox}>
+              <Text style={[styles.marksSummaryBoxNum, { color: gradeInfo.color }]}>{percentage}%</Text>
+              <Text style={styles.marksSummaryBoxLabel}>Percentage</Text>
+            </View>
+            <View style={styles.marksSummaryBox}>
+              <Text style={[styles.marksSummaryBoxNum, { color: "#0284c7" }]}>{enteredSubjectsCount}/{subjects.length}</Text>
+              <Text style={styles.marksSummaryBoxLabel}>Subjects</Text>
+            </View>
+          </View>
+
+          <View style={styles.teacherProgressBarTrack}>
+            <View
+              style={[
+                styles.teacherProgressBarFill,
+                { width: `${Math.min(100, Math.max(5, percentage))}%`, backgroundColor: gradeInfo.color },
+              ]}
+            />
+          </View>
+        </View>
+      ) : null}
+
+      {error ? <Notice tone="error" text={error} /> : null}
+      {message ? <Notice tone="success" text={message} /> : null}
+
+      {/* QUICK BUTTON TO PROCEED TO NEXT STUDENT IF SAVED */}
+      {message && nextStudent ? (
+        <Pressable
+          onPress={() => selectStudent(nextStudent)}
+          style={styles.marksNextStudentAction}
+        >
+          <Text style={styles.marksNextStudentText}>
+            Grade Next Student: Roll #{nextStudent.rollNo} ({nextStudent.name})
+          </Text>
+          <Feather name="arrow-right" size={14} color="#047857" />
+        </Pressable>
+      ) : null}
+
+      {loading ? <LoadingBlock label="Loading class subjects..." /> : null}
+
+      {/* 4. SUBJECT MARKS CARDS */}
       {!loading && subjects.length ? (
         subjects.map((subject, index) => {
           const rules = getSubjectRules(subject.name);
+          const icon = getSubjectIcon(subject.name);
+          const extVal = marks[index]?.external_marks ?? "";
+          const intVal = marks[index]?.internal_marks ?? "";
+          const extNum = Number(extVal || 0);
+          const intNum = Number(intVal || 0);
+          const hasVal = extVal !== "" || intVal !== "";
+          const subjectTotal = extNum + intNum;
+          const subjectMax = rules.externalMax + (rules.internalAllowed ? rules.internalMax : 0);
+          const isOverMax = extNum > rules.externalMax || (rules.internalAllowed && intNum > rules.internalMax);
+
           return (
-            <View key={subject.id || subject.name} style={styles.marksCard}>
-              <View style={styles.marksHeader}>
-                <View>
-                  <Text style={styles.rowTitle}>{subject.name}</Text>
-                  <Text style={styles.rowMeta}>
-                    {subject.code || "Subject"} | External max {rules.externalMax}
-                    {rules.internalAllowed ? ` | Internal max ${rules.internalMax}` : " | No internal"}
+            <View key={subject.id || subject.name} style={styles.marksItemCard}>
+              <View style={styles.marksItemHeader}>
+                <View style={styles.marksItemIconWrap}>
+                  <Feather name={icon} size={16} color="#047857" />
+                </View>
+                <View style={styles.marksItemTitles}>
+                  <Text style={styles.marksItemName}>{subject.name}</Text>
+                  <Text style={styles.marksItemMeta}>
+                    {subject.code ? `${subject.code} • ` : ""}Max {subjectMax}
                   </Text>
                 </View>
+
+                {hasVal ? (
+                  <View style={styles.marksItemScorePill}>
+                    <Text style={styles.marksItemScoreText}>
+                      {subjectTotal} / {subjectMax}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
-              <View style={styles.marksInputRow}>
-                <View style={styles.marksInputWrap}>
-                  <Text style={styles.miniLabel}>External</Text>
+
+              <View style={styles.marksItemInputRow}>
+                {/* External / Theory */}
+                <View style={styles.marksItemInputCol}>
+                  <Text style={styles.marksFieldLabel}>
+                    Theory (Max {rules.externalMax})
+                  </Text>
                   <TextInput
                     keyboardType="numeric"
                     onChangeText={(value) => updateMark(index, "external_marks", value)}
                     placeholder="0"
-                    placeholderTextColor="#8a8f98"
-                    style={styles.input}
-                    value={String(marks[index]?.external_marks ?? "")}
+                    placeholderTextColor="#94a3b8"
+                    style={[
+                      styles.marksInputEnhanced,
+                      extNum > rules.externalMax && styles.marksInputError,
+                    ]}
+                    value={String(extVal)}
                   />
                 </View>
+
+                {/* Internal / Practical (if applicable) */}
                 {rules.internalAllowed ? (
-                  <View style={styles.marksInputWrap}>
-                    <Text style={styles.miniLabel}>Internal</Text>
+                  <View style={styles.marksItemInputCol}>
+                    <Text style={styles.marksFieldLabel}>
+                      Practical (Max {rules.internalMax})
+                    </Text>
                     <TextInput
                       keyboardType="numeric"
                       onChangeText={(value) => updateMark(index, "internal_marks", value)}
                       placeholder="0"
-                      placeholderTextColor="#8a8f98"
-                      style={styles.input}
-                      value={String(marks[index]?.internal_marks ?? "")}
+                      placeholderTextColor="#94a3b8"
+                      style={[
+                        styles.marksInputEnhanced,
+                        intNum > rules.internalMax && styles.marksInputError,
+                      ]}
+                      value={String(intVal)}
                     />
                   </View>
-                ) : null}
+                ) : (
+                  <View style={styles.marksDrawingBanner}>
+                    <Text style={styles.marksDrawingBannerText}>No Internal (Full 50 Marks)</Text>
+                  </View>
+                )}
               </View>
+
+              {isOverMax ? (
+                <Text style={styles.errorText}>
+                  Entered marks exceed allowed limits!
+                </Text>
+              ) : null}
             </View>
           );
         })
@@ -2650,16 +3654,42 @@ function SubmitMarksPanel({ assignment, session, students }) {
         <EmptyState title="No subjects" text="Selected class/section ke subjects backend me nahi mile." />
       ) : null}
 
-      <Pressable disabled={saving || loading || !subjects.length} onPress={saveMarks} style={[styles.primaryButton, (saving || loading || !subjects.length) && styles.disabledButton]}>
-        {saving ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <View style={styles.buttonContentRow}>
-            <Feather name="save" size={18} color="#fff" />
-            <Text style={styles.primaryButtonText}>Submit Marks</Text>
-          </View>
-        )}
-      </Pressable>
+      {/* 5. ACTIONS: CLEAR & SUBMIT */}
+      <View style={{ flexDirection: "row", gap: 10, marginTop: 10, marginBottom: 20 }}>
+        {hasEnteredAnyMarks ? (
+          <Pressable
+            disabled={saving}
+            onPress={clearCurrentMarks}
+            style={[styles.outlineButton, { flex: 1, paddingVertical: 12, alignItems: "center", justifyContent: "center" }]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Feather name="rotate-ccw" size={14} color="#047857" />
+              <Text style={{ color: "#047857", fontWeight: "800", fontSize: 13 }}>Clear</Text>
+            </View>
+          </Pressable>
+        ) : null}
+
+        <Pressable
+          disabled={saving || loading || !subjects.length}
+          onPress={saveMarks}
+          style={[
+            styles.primaryButton,
+            { flex: hasEnteredAnyMarks ? 2 : 1 },
+            (saving || loading || !subjects.length) && styles.disabledButton,
+          ]}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <View style={styles.buttonContentRow}>
+              <Feather name={isEditingExisting ? "edit-3" : "check-circle"} size={16} color="#fff" />
+              <Text style={styles.primaryButtonText}>
+                {isEditingExisting ? "Update Marks" : "Submit Marks"}
+              </Text>
+            </View>
+          )}
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -2690,7 +3720,7 @@ function ViewMarksPanel({ assignment, session }) {
     } finally {
       setLoading(false);
     }
-  }, [assignment, session.token, terminal]);
+  }, [assignment?.class, assignment?.section, session.token, terminal]);
 
   useEffect(() => {
     loadMarks();
@@ -3271,7 +4301,7 @@ function HolidayCalendarPanel({ session }) {
 
       <View style={styles.holidayInfoCard}>
         <View style={styles.holidayInfoIconWrap}>
-          <Feather name="info" size={18} color="#1458bf" />
+          <Feather name="info" size={18} color="#047857" />
         </View>
         <View style={styles.holidayInfoBody}>
           <Text style={styles.holidayInfoTitle}>{panelInfoTitle}</Text>
@@ -3382,7 +4412,7 @@ function HolidayCalendarPanel({ session }) {
                       <Text style={styles.holidayTypeText}>{chipText}</Text>
                     </View>
                     <View style={styles.holidayIconTile}>
-                      <Feather name={decorIcon} size={24} color="#1458bf" />
+                      <Feather name={decorIcon} size={24} color="#047857" />
                     </View>
                   </View>
                 </View>
@@ -3397,14 +4427,149 @@ function HolidayCalendarPanel({ session }) {
   );
 }
 
-function StudentAttendance({ records, summary }) {
+function StudentAttendance({ records = [], summary }) {
+  const workingDays = Number(
+    summary?.workingDays ||
+      Number(summary?.present || 0) + Number(summary?.absent || 0) + Number(summary?.late || 0) ||
+      0
+  );
+  const percentage = Number(
+    summary?.percentage ||
+      (workingDays > 0 ? Math.round((Number(summary.present || 0) / workingDays) * 100) : 0)
+  );
+
   return (
-    <View>
-      <View style={styles.metricGrid}>
-        <MetricCard label="Present" value={summary.present || 0} tone="green" />
-        <MetricCard label="Absent" value={summary.absent || 0} tone="red" />
+    <View style={styles.studentAttendancePage}>
+      {/* 1. ATTENDANCE SUMMARY BANNER */}
+      <View style={styles.studentAttBannerCard}>
+        <View style={styles.studentAttBannerTop}>
+          <View>
+            <Text style={styles.studentAttBannerEyebrow}>ACADEMIC SESSION RECORD</Text>
+            <Text style={styles.studentAttBannerScore}>{percentage}% Attendance</Text>
+          </View>
+          <View style={styles.studentAttBannerPill}>
+            <Text style={styles.studentAttBannerPillText}>
+              {summary.present || 0} / {workingDays || 0} Days
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.studentProgressBarTrack}>
+          <View
+            style={[
+              styles.studentProgressBarFill,
+              { width: `${Math.min(100, Math.max(4, percentage))}%` },
+              percentage < 75 && styles.studentProgressBarLow,
+            ]}
+          />
+        </View>
+
+        <View style={styles.studentMetricsGrid}>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricPresent]}>
+            <Feather name="check-circle" size={13} color="#059669" />
+            <Text style={styles.studentMetricNum}>{summary.present || 0}</Text>
+            <Text style={styles.studentMetricTag}>Present</Text>
+          </View>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricAbsent]}>
+            <Feather name="x-circle" size={13} color="#e11d48" />
+            <Text style={[styles.studentMetricNum, { color: "#e11d48" }]}>{summary.absent || 0}</Text>
+            <Text style={styles.studentMetricTag}>Absent</Text>
+          </View>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricLate]}>
+            <Feather name="clock" size={13} color="#d97706" />
+            <Text style={[styles.studentMetricNum, { color: "#d97706" }]}>{summary.late || 0}</Text>
+            <Text style={styles.studentMetricTag}>Late</Text>
+          </View>
+          <View style={[styles.studentMetricPillCard, styles.studentMetricDays]}>
+            <Feather name="calendar" size={13} color="#0284c7" />
+            <Text style={[styles.studentMetricNum, { color: "#0284c7" }]}>{workingDays}</Text>
+            <Text style={styles.studentMetricTag}>Total</Text>
+          </View>
+        </View>
       </View>
-      <RecordList records={records} />
+
+      {/* 2. DAY-WISE ATTENDANCE HISTORY LIST */}
+      <View style={styles.studentAttHistorySection}>
+        <View style={styles.studentSectionTitleWrap}>
+          <Text style={styles.studentSectionTitle}>Day-wise Attendance Logs</Text>
+          <Text style={styles.studentSectionMeta}>Daily records submitted by assigned class teacher</Text>
+        </View>
+
+        {!records?.length ? (
+          <View style={styles.studentAttEmptyCard}>
+            <Feather name="calendar" size={32} color="#94a3b8" />
+            <Text style={styles.studentAttEmptyTitle}>No attendance records</Text>
+            <Text style={styles.studentAttEmptyText}>
+              Is session ke liye attendance record abhi tak update nahi hua hai.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.studentAttRecordList}>
+            {records.map((record) => {
+              const rawDate = record.attendance_date;
+              const parsedDate = new Date(rawDate);
+              const dayNum = !isNaN(parsedDate) ? parsedDate.getDate() : "--";
+              const monthName = !isNaN(parsedDate)
+                ? parsedDate.toLocaleDateString("en-IN", { month: "short" }).toUpperCase()
+                : "DATE";
+              const dayOfWeek = !isNaN(parsedDate)
+                ? parsedDate.toLocaleDateString("en-IN", { weekday: "long" })
+                : "";
+              const formattedDate = formatDisplayDate(rawDate);
+
+              const status = String(record.status || "present").toLowerCase();
+              const isPresent = status === "present";
+              const isAbsent = status === "absent";
+              const isLate = status === "late";
+
+              return (
+                <View
+                  key={record.id || `${record.attendance_date}`}
+                  style={styles.studentAttRecordRow}
+                >
+                  <View style={styles.studentAttDateBadge}>
+                    <Text style={styles.studentAttDayNumber}>{dayNum}</Text>
+                    <Text style={styles.studentAttMonthText}>{monthName}</Text>
+                  </View>
+
+                  <View style={styles.studentAttRecordDetails}>
+                    <Text style={styles.studentAttRecordDay}>{dayOfWeek || "School Day"}</Text>
+                    <Text style={styles.studentAttRecordFullDate}>{formattedDate}</Text>
+                    {record.remark ? (
+                      <Text style={styles.studentAttRecordRemark}>{record.remark}</Text>
+                    ) : null}
+                  </View>
+
+                  <View
+                    style={[
+                      styles.studentAttStatusPill,
+                      isPresent && styles.studentAttPillPresent,
+                      isAbsent && styles.studentAttPillAbsent,
+                      isLate && styles.studentAttPillLate,
+                    ]}
+                  >
+                    <Feather
+                      name={isPresent ? "check" : isAbsent ? "x" : isLate ? "clock" : "circle"}
+                      size={11}
+                      color={isPresent ? "#047857" : isAbsent ? "#e11d48" : isLate ? "#d97706" : "#475569"}
+                    />
+                    <Text
+                      style={[
+                        styles.studentAttStatusText,
+                        isPresent && { color: "#047857" },
+                        isAbsent && { color: "#e11d48" },
+                        isLate && { color: "#d97706" },
+                      ]}
+                    >
+                      {record.status || "Present"}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -3563,7 +4728,7 @@ function Notice({ tone, text }) {
   const toneStyle = tone === "error" ? styles.noticeError : tone === "success" ? styles.noticeSuccess : styles.noticeInfo;
   const textStyle = tone === "error" ? styles.noticeTextError : tone === "success" ? styles.noticeTextSuccess : styles.noticeTextInfo;
   const iconName = getNoticeIconName(tone);
-  const iconColor = tone === "error" ? "#9f2f21" : tone === "success" ? "#166534" : "#1458bf";
+  const iconColor = tone === "error" ? "#9f2f21" : tone === "success" ? "#166534" : "#047857";
 
   return (
     <View style={[styles.notice, toneStyle]}>
@@ -3662,11 +4827,11 @@ const getMetricIconName = (label = "") => {
 
 const getMetricIconColor = (tone = "") =>
   ({
-    teal: "#1458bf",
+    teal: "#047857",
     green: "#16a34a",
     red: "#ef4444",
     amber: "#f59e0b",
-  }[tone] || "#1458bf");
+  }[tone] || "#047857");
 
 const getNoticeIconName = (tone = "info") =>
   tone === "error" ? "alert-circle" : tone === "success" ? "check-circle" : "info";
@@ -3776,7 +4941,7 @@ const styles = StyleSheet.create({
     width: 96,
   },
   brandKicker: {
-    color: "#1d4ed8",
+    color: "#059669",
     fontSize: 12,
     fontWeight: "900",
     marginBottom: 6,
@@ -3832,7 +4997,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   segmentButtonActive: {
-    backgroundColor: "#eff6ff",
+    backgroundColor: "#ecfdf5",
   },
   segmentText: {
     color: "#52606d",
@@ -3840,7 +5005,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   segmentTextActive: {
-    color: "#1d4ed8",
+    color: "#059669",
   },
   formBlock: {
     backgroundColor: "#fff",
@@ -3855,7 +5020,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   inputLabel: {
-    color: "#0d2f68",
+    color: "#064e3b",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.3,
@@ -3873,7 +5038,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minHeight: 54,
     paddingHorizontal: 15,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 10,
@@ -3900,7 +5065,7 @@ const styles = StyleSheet.create({
     paddingRight: 14,
   },
   dropdownButtonActive: {
-    borderColor: "#1458bf",
+    borderColor: "#047857",
   },
   dropdownButtonText: {
     color: "#17202a",
@@ -3922,7 +5087,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     marginTop: 6,
     overflow: "hidden",
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
     shadowRadius: 18,
@@ -3932,7 +5097,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   dropdownItemActive: {
-    backgroundColor: "#edf4ff",
+    backgroundColor: "#ecfdf5",
   },
   dropdownItemText: {
     color: "#17202a",
@@ -3940,7 +5105,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   dropdownItemTextActive: {
-    color: "#1d4ed8",
+    color: "#059669",
   },
   dropdownItemMeta: {
     color: "#667085",
@@ -3961,7 +5126,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 2,
     overflow: "hidden",
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
@@ -4001,7 +5166,7 @@ const styles = StyleSheet.create({
     minWidth: 48,
   },
   studentAccordionBadgeText: {
-    color: "#1d4ed8",
+    color: "#059669",
     fontSize: 10,
     fontWeight: "900",
     letterSpacing: 0.4,
@@ -4032,7 +5197,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 10,
     padding: 16,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
@@ -4061,8 +5226,8 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   monthBreakdownItemActive: {
-    backgroundColor: "#edf4ff",
-    borderColor: "#1458bf",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#047857",
   },
   monthBreakdownTitle: {
     color: "#17202a",
@@ -4076,7 +5241,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   monthBreakdownValue: {
-    color: "#1d4ed8",
+    color: "#059669",
     fontSize: 14,
     fontWeight: "900",
     minWidth: 42,
@@ -4099,8 +5264,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   dashboardFilterButtonActive: {
-    backgroundColor: "#edf4ff",
-    borderColor: "#1458bf",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#047857",
   },
   dashboardFilterText: {
     color: "#52606d",
@@ -4108,7 +5273,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   dashboardFilterTextActive: {
-    color: "#1d4ed8",
+    color: "#059669",
   },
   dashboardMetaRow: {
     flexDirection: "row",
@@ -4123,12 +5288,12 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: "#1458bf",
+    backgroundColor: "#047857",
     borderRadius: 18,
     justifyContent: "center",
     marginTop: 16,
     minHeight: 56,
-    shadowColor: "#1458bf",
+    shadowColor: "#047857",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 18,
@@ -4169,21 +5334,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   actionButtonSoft: {
-    backgroundColor: "#edf4ff",
+    backgroundColor: "#ecfdf5",
     borderColor: "#c9daf7",
     borderWidth: 1,
   },
   actionButtonPrimary: {
-    backgroundColor: "#1458bf",
-    borderColor: "#1458bf",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
     borderWidth: 1,
-    shadowColor: "#1458bf",
+    shadowColor: "#047857",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 16,
   },
   actionButtonText: {
-    color: "#1458bf",
+    color: "#047857",
     fontSize: 15,
     fontWeight: "900",
   },
@@ -4683,85 +5848,7 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 180,
   },
-  tabDock: {
-    backgroundColor: "rgba(250, 248, 244, 0.98)",
-    borderColor: "#e3ddd2",
-    borderRadius: 22,
-    borderWidth: 1,
-    bottom: 12,
-    left: 12,
-    paddingBottom: 8,
-    paddingTop: 8,
-    position: "absolute",
-    right: 12,
-    shadowColor: "#111827",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  parentTabScroller: {
-    paddingHorizontal: 8,
-  },
-  parentTabBar: {
-    flexDirection: "row",
-    gap: 7,
-  },
-  parentTabButton: {
-    alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderColor: "#e5e7eb",
-    borderRadius: 18,
-    borderWidth: 1,
-    justifyContent: "center",
-    flex: 1,
-    flexBasis: 0,
-    minHeight: 70,
-    minWidth: 0,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-  },
-  parentTabButtonActive: {
-    backgroundColor: "#f8fbff",
-    borderColor: "#3b82f6",
-    shadowColor: "#3b82f6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  parentTabText: {
-    color: "#475569",
-    fontSize: 11,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-  parentTabTextActive: {
-    color: "#1d4ed8",
-  },
-  parentTabBadge: {
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderColor: "#e2e8f0",
-    borderRadius: 999,
-    borderWidth: 1,
-    height: 26,
-    justifyContent: "center",
-    marginBottom: 6,
-    width: 26,
-  },
-  parentTabBadgeActive: {
-    backgroundColor: "#dbeafe",
-    borderColor: "#bfdbfe",
-  },
-  parentTabBadgeText: {
-    color: "#64748b",
-    fontSize: 11,
-    fontWeight: "900",
-  },
-  parentTabBadgeTextActive: {
-    color: "#1d4ed8",
-  },
+
   sectionTabsWrap: {
     borderBottomColor: "#e5e7eb",
     borderBottomWidth: 1,
@@ -4787,7 +5874,7 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   sectionTabButtonActive: {
-    borderBottomColor: "#4f46e5",
+    borderBottomColor: "#047857",
   },
   sectionTabIcon: {
     borderColor: "#8a8f98",
@@ -4797,7 +5884,7 @@ const styles = StyleSheet.create({
     width: 12,
   },
   sectionTabIconActive: {
-    borderColor: "#4f46e5",
+    borderColor: "#047857",
   },
   sectionTabText: {
     color: "#8a8f98",
@@ -4805,7 +5892,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   sectionTabTextActive: {
-    color: "#4f46e5",
+    color: "#047857",
   },
   loadingBlock: {
     alignItems: "center",
@@ -4819,14 +5906,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   heroPanel: {
-    backgroundColor: "#08377e",
+    backgroundColor: "#047857",
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#0d4ca9",
+    borderColor: "#059669",
     marginBottom: 14,
     overflow: "hidden",
     padding: 20,
-    shadowColor: "#08377e",
+    shadowColor: "#047857",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 18,
@@ -4893,14 +5980,14 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 102,
     padding: 16,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
     width: "48%",
   },
   metric_teal: {
-    backgroundColor: "#edf4ff",
+    backgroundColor: "#ecfdf5",
   },
   metric_green: {
     backgroundColor: "#ecfbf1",
@@ -4919,7 +6006,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   metricValue: {
-    color: "#0b2f63",
+    color: "#06372b",
     fontSize: 23,
     fontWeight: "900",
     marginTop: 10,
@@ -4952,21 +6039,21 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 78,
     padding: 14,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
   },
   featureIcon: {
     alignItems: "center",
-    backgroundColor: "#dbeafe",
+    backgroundColor: "#d1fae5",
     borderRadius: 14,
     height: 42,
     justifyContent: "center",
     width: 42,
   },
   featureIconText: {
-    color: "#1d4ed8",
+    color: "#059669",
     fontSize: 16,
     fontWeight: "900",
   },
@@ -4996,21 +6083,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     padding: 14,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
   },
   avatar: {
     alignItems: "center",
-    backgroundColor: "#edf4ff",
+    backgroundColor: "#ecfdf5",
     borderRadius: 16,
     height: 48,
     justifyContent: "center",
     width: 48,
   },
   avatarText: {
-    color: "#1458bf",
+    color: "#047857",
     fontSize: 13,
     fontWeight: "900",
   },
@@ -5072,7 +6159,7 @@ const styles = StyleSheet.create({
     minHeight: 132,
     paddingHorizontal: 18,
     paddingVertical: 18,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.04,
     shadowRadius: 18,
@@ -5090,7 +6177,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   holidayHeroTitle: {
-    color: "#15294f",
+    color: "#064e3b",
     fontSize: 33,
     fontWeight: "900",
     lineHeight: 40,
@@ -5119,7 +6206,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 12,
     padding: 18,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.04,
     shadowRadius: 18,
@@ -5141,7 +6228,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     minHeight: 64,
     paddingHorizontal: 18,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -5150,7 +6237,7 @@ const styles = StyleSheet.create({
     borderColor: "#bcd0f4",
   },
   holidayMonthButtonText: {
-    color: "#15294f",
+    color: "#064e3b",
     flex: 1,
     fontSize: 20,
     fontWeight: "900",
@@ -5187,7 +6274,7 @@ const styles = StyleSheet.create({
     minHeight: 86,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.03,
     shadowRadius: 14,
@@ -5234,7 +6321,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 14,
     padding: 14,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.04,
     shadowRadius: 16,
@@ -5250,13 +6337,13 @@ const styles = StyleSheet.create({
     width: 86,
   },
   holidayDateWeekday: {
-    color: "#1d4ed8",
+    color: "#059669",
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.4,
   },
   holidayDateDay: {
-    color: "#15294f",
+    color: "#064e3b",
     fontSize: 34,
     fontWeight: "900",
     lineHeight: 38,
@@ -5280,13 +6367,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   holidayItemTitle: {
-    color: "#15294f",
+    color: "#064e3b",
     fontSize: 19,
     fontWeight: "900",
     lineHeight: 24,
   },
   holidayItemDate: {
-    color: "#1458bf",
+    color: "#047857",
     fontSize: 13,
     fontWeight: "900",
     marginTop: 6,
@@ -5326,7 +6413,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     padding: 14,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -5400,9 +6487,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   holidayTabButtonActive: {
-    backgroundColor: "#1458bf",
-    borderColor: "#1458bf",
-    shadowColor: "#1458bf",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
+    shadowColor: "#047857",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.16,
     shadowRadius: 10,
@@ -5430,7 +6517,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 12,
     padding: 16,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -5508,8 +6595,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   terminalButtonActive: {
-    backgroundColor: "#1458bf",
-    borderColor: "#1458bf",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
   },
   terminalButtonLocked: {
     backgroundColor: "#f8fafc",
@@ -5535,7 +6622,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   terminalSubtextActive: {
-    color: "#dbeafe",
+    color: "#d1fae5",
   },
   terminalSubtextLocked: {
     color: "#94a3b8",
@@ -5551,8 +6638,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   studentChipActive: {
-    backgroundColor: "#1458bf",
-    borderColor: "#1458bf",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
   },
   studentChipTitle: {
     color: "#17202a",
@@ -5575,7 +6662,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 10,
     padding: 14,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -5590,7 +6677,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 10,
     padding: 16,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -5675,8 +6762,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   statusButtonActive: {
-    backgroundColor: "#1458bf",
-    borderColor: "#1458bf",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
   },
   statusText: {
     color: "#52606d",
@@ -5695,14 +6782,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 14,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
   },
   recordRowActive: {
-    backgroundColor: "#edf4ff",
-    borderColor: "#1458bf",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#047857",
   },
   statusPill: {
     borderRadius: 8,
@@ -5723,7 +6810,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#dcfce7",
   },
   pill_locked: {
-    backgroundColor: "#dbeafe",
+    backgroundColor: "#d1fae5",
   },
   pill_pending: {
     backgroundColor: "#fef3c7",
@@ -5741,7 +6828,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -5783,7 +6870,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     padding: 24,
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -5802,64 +6889,68 @@ const styles = StyleSheet.create({
   },
   portalShell: {
     flex: 1,
-    backgroundColor: "#07366f",
+    backgroundColor: "#064e3b",
   },
   portalContent: {
     alignItems: "center",
     flexGrow: 1,
-    justifyContent: "center",
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+    paddingBottom: 240,
   },
   portalFrame: {
     alignSelf: "center",
-    backgroundColor: "#07366f",
+    backgroundColor: "#064e3b",
     flex: 1,
     maxWidth: 430,
-    minHeight: 812,
+    minHeight: "100%",
     overflow: "hidden",
     position: "relative",
     width: "100%",
   },
   portalPhotoLayer: {
-    backgroundColor: "#dceefa",
+    backgroundColor: "#d1fae5",
     borderBottomLeftRadius: 34,
     borderBottomRightRadius: 34,
     height: 202,
     left: 0,
     opacity: 0.96,
+    overflow: "hidden",
     position: "absolute",
     right: 0,
     top: 0,
   },
-  portalWhiteSheet: {
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderBottomLeftRadius: 76,
-    borderBottomRightRadius: 76,
-    borderTopLeftRadius: 260,
-    borderTopRightRadius: 260,
-    bottom: 96,
-    left: -54,
+  portalPhotoImage: {
+    height: 300,
+    left: 0,
     position: "absolute",
-    right: -54,
-    top: 158,
+    right: 0,
+    top: 0,
+    width: "100%",
   },
-  portalGoldArc: {
-    borderColor: "#efc44d",
-    borderRadius: 270,
-    borderWidth: 3,
-    bottom: 86,
-    height: 560,
-    left: -86,
-    opacity: 0.78,
+  portalPhotoWash: {
+    backgroundColor: "rgba(255,255,255,0.35)",
+    flex: 1,
+    zIndex: 1,
+  },
+  portalWhiteSheet: {
+    backgroundColor: "#f8fafc",
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    bottom: 0,
+    left: 0,
     position: "absolute",
-    right: -86,
+    right: 0,
+    top: 136,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   portalHero: {
     alignItems: "center",
-    paddingBottom: 8,
-    paddingHorizontal: 28,
-    paddingTop: 44,
+    paddingBottom: 10,
+    paddingHorizontal: 24,
+    paddingTop: 36,
     zIndex: 2,
   },
   portalLogoWrap: {
@@ -5868,168 +6959,100 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   portalLogoGlow: {
-    backgroundColor: "rgba(255,255,255,0.58)",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
     borderRadius: 999,
-    height: 134,
+    height: 118,
     position: "absolute",
-    width: 134,
+    width: 118,
   },
   portalLogoRing: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#efc44d",
+    borderColor: "#10b981",
     borderRadius: 999,
-    borderWidth: 2,
+    borderWidth: 2.5,
     elevation: 6,
-    height: 112,
+    height: 104,
     justifyContent: "center",
-    shadowColor: "#d69c18",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    width: 112,
+    shadowColor: "#047857",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    width: 104,
   },
   portalLogoImage: {
-    height: 100,
-    width: 100,
+    height: 90,
+    width: 90,
   },
   portalEyebrowRow: {
     alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 999,
+    borderWidth: 1,
     flexDirection: "row",
-    gap: 10,
     justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 3.5,
   },
   portalTinyLine: {
-    backgroundColor: "#d9a62e",
-    borderRadius: 999,
-    height: 1.5,
-    width: 26,
+    height: 0,
+    width: 0,
   },
   portalEyebrow: {
-    color: "#1458bf",
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0,
+    color: "#047857",
+    fontSize: 10.5,
+    fontWeight: "800",
+    letterSpacing: 0.6,
     textTransform: "uppercase",
   },
   portalTitle: {
-    color: "#092d66",
-    fontSize: 29,
+    color: "#064e3b",
+    fontSize: 25,
     fontWeight: "900",
-    letterSpacing: 0,
-    lineHeight: 32,
-    marginTop: 5,
+    letterSpacing: -0.3,
+    lineHeight: 29,
+    marginTop: 6,
     textAlign: "center",
   },
   portalSubtitle: {
-    color: "#56657f",
-    fontSize: 13.5,
-    fontWeight: "700",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  portalDivider: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 7,
-  },
-  portalDividerLine: {
-    backgroundColor: "#d9a62e",
-    borderRadius: 999,
-    height: 1.5,
-    width: 42,
-  },
-  portalDividerStar: {
-    color: "#d9a62e",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  portalFeatureRow: {
-    flexDirection: "row",
-    gap: 14,
-    marginTop: 14,
-    width: "100%",
-  },
-  portalFeatureCard: {
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e0e7f1",
-    borderRadius: 18,
-    borderWidth: 1,
-    elevation: 3,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 82,
-    paddingHorizontal: 6,
-    paddingVertical: 10,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-  },
-  portalFeatureIcon: {
-    alignItems: "center",
-    borderRadius: 999,
-    height: 32,
-    justifyContent: "center",
-    width: 32,
-  },
-  portalFeatureIconBlue: {
-    backgroundColor: "#eaf1ff",
-  },
-  portalFeatureIconGreen: {
-    backgroundColor: "#e9f8ef",
-  },
-  portalFeatureIconGold: {
-    backgroundColor: "#fff2df",
-  },
-  portalFeatureIconText: {
-    color: "#1458bf",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  portalFeatureTitle: {
-    color: "#092d66",
-    fontSize: 13.5,
-    fontWeight: "900",
-    marginTop: 5,
-    textAlign: "center",
-  },
-  portalFeatureText: {
-    color: "#65758d",
-    fontSize: 11,
-    fontWeight: "700",
+    color: "#64748b",
+    fontSize: 13,
+    fontWeight: "600",
     marginTop: 2,
     textAlign: "center",
   },
   portalSegment: {
     alignSelf: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderColor: "#e4ebf3",
-    borderRadius: 22,
-    borderWidth: 1,
-    elevation: 4,
+    backgroundColor: "#e2e8f0",
+    borderRadius: 24,
+    elevation: 2,
     flexDirection: "row",
-    height: 42,
-    marginTop: 8,
+    height: 44,
+    marginTop: 12,
     padding: 4,
     position: "relative",
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
     width: "86%",
+    maxWidth: 340,
     zIndex: 3,
   },
   portalSegmentThumb: {
-    backgroundColor: "#073b82",
-    borderRadius: 18,
+    backgroundColor: "#047857",
+    borderRadius: 20,
     bottom: 4,
     left: 4,
     position: "absolute",
     top: 4,
     width: "50%",
+    elevation: 3,
+    shadowColor: "#047857",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   portalSegmentThumbRight: {
     left: "50%",
@@ -6041,45 +7064,48 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   portalSegmentText: {
-    color: "#092d66",
-    fontSize: 15,
-    fontWeight: "900",
+    color: "#475569",
+    fontSize: 14.5,
+    fontWeight: "700",
   },
   portalSegmentTextActive: {
-    color: "#fff",
+    color: "#ffffff",
+    fontWeight: "900",
   },
   portalFormCard: {
     backgroundColor: "#fff",
     borderRadius: 24,
-    elevation: 4,
-    marginHorizontal: 28,
-    marginTop: 9,
-    paddingBottom: 13,
+    elevation: 3,
+    marginHorizontal: 22,
+    marginTop: 12,
+    paddingBottom: 20,
     paddingHorizontal: 20,
-    paddingTop: 13,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
+    paddingTop: 18,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
     shadowRadius: 16,
+    borderColor: "#e2e8f0",
+    borderWidth: 1,
     zIndex: 2,
   },
   portalFormTitle: {
-    color: "#092d66",
-    fontSize: 20,
+    color: "#064e3b",
+    fontSize: 21,
     fontWeight: "900",
-    letterSpacing: 0,
+    letterSpacing: -0.2,
     textAlign: "center",
   },
   portalFormSubtitle: {
-    color: "#607087",
+    color: "#64748b",
     fontSize: 12.5,
-    fontWeight: "700",
-    marginBottom: 6,
+    fontWeight: "600",
+    marginBottom: 10,
     marginTop: 3,
     textAlign: "center",
   },
   portalLabel: {
-    color: "#092d66",
+    color: "#064e3b",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0,
@@ -6089,42 +7115,46 @@ const styles = StyleSheet.create({
   },
   portalInputShell: {
     alignItems: "center",
-    backgroundColor: "#fbfdff",
-    borderColor: "#dbe4f0",
-    borderRadius: 16,
-    borderWidth: 1,
+    backgroundColor: "#ffffff",
+    borderColor: "#cbd5e1",
+    borderRadius: 14,
+    borderWidth: 1.2,
     flexDirection: "row",
-    height: 46,
+    height: 48,
     overflow: "hidden",
   },
   portalInputIcon: {
     alignItems: "center",
     alignSelf: "stretch",
-    backgroundColor: "#f1f6fb",
-    borderRightColor: "#e0e8f2",
-    borderRightWidth: 1,
+    backgroundColor: "#f0fdf4",
+    borderRightColor: "#dcfce7",
+    borderRightWidth: 1.2,
     justifyContent: "center",
     width: 46,
   },
   portalInputIconText: {
-    color: "#0f4592",
+    color: "#047857",
     fontSize: 14,
     fontWeight: "900",
   },
   portalInput: {
-    color: "#10233f",
+    color: "#0f172a",
     flex: 1,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   portalEyeButton: {
-    paddingHorizontal: 12,
+    alignItems: "center",
+    alignSelf: "stretch",
+    justifyContent: "center",
+    minWidth: 46,
+    paddingHorizontal: 14,
   },
   portalEyeText: {
-    color: "#7a879a",
-    fontSize: 11,
+    color: "#64748b",
+    fontSize: 12,
     fontWeight: "900",
   },
   portalHelperText: {
@@ -6155,16 +7185,16 @@ const styles = StyleSheet.create({
   portalCheckBox: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#b8c6d8",
-    borderRadius: 5,
-    borderWidth: 1,
-    height: 18,
+    borderColor: "#047857",
+    borderRadius: 6,
+    borderWidth: 1.5,
+    height: 20,
     justifyContent: "center",
-    width: 18,
+    width: 20,
   },
   portalCheckBoxActive: {
-    backgroundColor: "#073b82",
-    borderColor: "#073b82",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
   },
   portalCheckText: {
     color: "transparent",
@@ -6178,7 +7208,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   portalForgotText: {
-    color: "#1458bf",
+    color: "#047857",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -6191,7 +7221,7 @@ const styles = StyleSheet.create({
   portalConsentBox: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#b8c6d8",
+    borderColor: "#047857",
     borderRadius: 6,
     borderWidth: 1.5,
     height: 20,
@@ -6199,8 +7229,8 @@ const styles = StyleSheet.create({
     width: 20,
   },
   portalConsentBoxActive: {
-    backgroundColor: "#073b82",
-    borderColor: "#073b82",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
   },
   portalConsentCheck: {
     color: "#fff",
@@ -6215,6 +7245,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 17,
+  },
+  portalConsentLink: {
+    color: "#047857",
+    fontWeight: "800",
+    textDecorationLine: "underline",
+  },
+  passwordInputWrap: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#cbd5e1",
+    borderRadius: 12,
+    borderWidth: 1.2,
+    flexDirection: "row",
+    height: 48,
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  passwordInputFlex: {
+    color: "#0f172a",
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    height: "100%",
+    marginBottom: 0,
+    borderWidth: 0,
+    paddingHorizontal: 12,
+  },
+  inputEyeBtn: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    justifyContent: "center",
+    minWidth: 46,
+    paddingHorizontal: 14,
   },
   portalLegalLinksRow: {
     flexDirection: "row",
@@ -6241,13 +7304,13 @@ const styles = StyleSheet.create({
   },
   portalLoginButton: {
     alignItems: "center",
-    backgroundColor: "#073b82",
+    backgroundColor: "#047857",
     borderRadius: 999,
     elevation: 5,
     flexDirection: "row",
     justifyContent: "center",
     minHeight: 46,
-    shadowColor: "#073b82",
+    shadowColor: "#047857",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 16,
@@ -6285,7 +7348,7 @@ const styles = StyleSheet.create({
   portalAdminButton: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#9db1d1",
+    borderColor: "#a7f3d0",
     borderRadius: 999,
     borderWidth: 1.2,
     flexDirection: "row",
@@ -6293,512 +7356,54 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   portalAdminText: {
-    color: "#0b397b",
+    color: "#047857",
     fontSize: 14,
     fontWeight: "900",
   },
   portalFooter: {
     alignItems: "center",
-    bottom: 16,
-    left: 24,
-    position: "absolute",
-    right: 24,
+    marginTop: 20,
+    marginBottom: 24,
+    paddingHorizontal: 24,
     zIndex: 2,
   },
   portalFooterText: {
-    color: "#fff",
+    color: "#64748b",
     fontSize: 12.5,
-    fontWeight: "600",
-    lineHeight: 18,
+    fontStyle: "italic",
+    fontWeight: "500",
+    lineHeight: 19,
     textAlign: "center",
   },
   portalFooterAuthor: {
-    color: "#efc44d",
-    fontSize: 12.5,
-    fontWeight: "900",
-    marginTop: 3,
-  },
-  portalFrame: {
-    alignSelf: "center",
-    backgroundColor: "#07366f",
-    flex: 1,
-    maxWidth: 430,
-    minHeight: 780,
-    overflow: "hidden",
-    position: "relative",
-    width: "100%",
-  },
-  portalPhotoLayer: {
-    backgroundColor: "#dceefa",
-    borderBottomLeftRadius: 22,
-    borderBottomRightRadius: 22,
-    height: 156,
-    left: 0,
-    opacity: 0.96,
-    overflow: "hidden",
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  portalPhotoImage: {
-    height: 300,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: "100%",
-  },
-  portalPhotoWash: {
-    backgroundColor: "rgba(255,255,255,0.35)",
-    flex: 1,
-    zIndex: 1,
-  },
-  portalWhiteSheet: {
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderBottomLeftRadius: 64,
-    borderBottomRightRadius: 64,
-    borderTopLeftRadius: 260,
-    borderTopRightRadius: 260,
-    bottom: 76,
-    left: -54,
-    position: "absolute",
-    right: -54,
-    top: 118,
-  },
-  portalGoldArc: {
-    borderColor: "#efc44d",
-    borderRadius: 270,
-    borderWidth: 2,
-    bottom: 68,
-    height: 470,
-    left: -86,
-    opacity: 0.78,
-    position: "absolute",
-    right: -86,
-  },
-  portalHero: {
-    alignItems: "center",
-    paddingBottom: 6,
-    paddingHorizontal: 34,
-    paddingTop: 32,
-    zIndex: 2,
-  },
-  portalLogoWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 7,
-  },
-  portalLogoGlow: {
-    backgroundColor: "rgba(255,255,255,0.58)",
-    borderRadius: 999,
-    height: 112,
-    position: "absolute",
-    width: 112,
-  },
-  portalLogoRing: {
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#efc44d",
-    borderRadius: 999,
-    borderWidth: 2,
-    elevation: 6,
-    height: 92,
-    justifyContent: "center",
-    shadowColor: "#d69c18",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    width: 92,
-  },
-  portalLogoImage: {
-    height: 82,
-    width: 82,
-  },
-  portalEyebrowRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 8,
-    justifyContent: "center",
-  },
-  portalTinyLine: {
-    backgroundColor: "#d9a62e",
-    borderRadius: 999,
-    height: 1.5,
-    width: 22,
-  },
-  portalEyebrow: {
-    color: "#1458bf",
-    fontSize: 8,
-    fontWeight: "900",
-    letterSpacing: 0,
-    textTransform: "uppercase",
-  },
-  portalTitle: {
-    color: "#092d66",
-    fontSize: 24,
-    fontWeight: "900",
-    letterSpacing: 0,
-    lineHeight: 27,
-    marginTop: 4,
-    textAlign: "center",
-  },
-  portalSubtitle: {
-    color: "#56657f",
-    fontSize: 10,
-    fontWeight: "700",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  portalDivider: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 5,
-  },
-  portalDividerLine: {
-    backgroundColor: "#d9a62e",
-    borderRadius: 999,
-    height: 1,
-    width: 34,
-  },
-  portalDividerStar: {
-    color: "#d9a62e",
+    color: "#047857",
     fontSize: 12,
-    fontWeight: "900",
-  },
-  portalFeatureRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 12,
-    width: "100%",
-  },
-  portalFeatureCard: {
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e0e7f1",
-    borderRadius: 10,
-    borderWidth: 1,
-    elevation: 3,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 74,
-    paddingHorizontal: 5,
-    paddingVertical: 8,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-  },
-  portalFeatureIcon: {
-    alignItems: "center",
-    borderRadius: 999,
-    height: 28,
-    justifyContent: "center",
-    width: 28,
-  },
-  portalFeatureIconText: {
-    color: "#1458bf",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  portalFeatureIconImage: {
-    height: 17,
-    width: 17,
-  },
-  portalFeatureIconImageBlue: {
-    tintColor: "#2a64e8",
-  },
-  portalFeatureIconImageGreen: {
-    tintColor: "#18a05e",
-  },
-  portalFeatureIconImageGold: {
-    tintColor: "#ff9d00",
-  },
-  portalFeatureTitle: {
-    color: "#092d66",
-    fontSize: 11,
-    fontWeight: "900",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  portalFeatureText: {
-    color: "#65758d",
-    fontSize: 8,
-    fontWeight: "700",
-    marginTop: 2,
-    textAlign: "center",
-  },
-  portalSegment: {
-    alignSelf: "center",
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderColor: "#e4ebf3",
-    borderRadius: 10,
-    borderWidth: 1,
-    elevation: 4,
-    flexDirection: "row",
-    height: 32,
-    marginTop: 8,
-    padding: 3,
-    position: "relative",
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    width: "84%",
-    zIndex: 3,
-  },
-  portalSegmentThumb: {
-    backgroundColor: "#073b82",
-    borderRadius: 8,
-    bottom: 3,
-    left: 3,
-    position: "absolute",
-    top: 3,
-    width: "50%",
-  },
-  portalSegmentText: {
-    color: "#092d66",
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  portalSegmentTextActive: {
-    color: "#fff",
-  },
-  portalFormCard: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    elevation: 4,
-    marginHorizontal: 34,
-    marginTop: 8,
-    paddingBottom: 11,
-    paddingHorizontal: 18,
-    paddingTop: 11,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    zIndex: 2,
-  },
-  portalFormTitle: {
-    color: "#092d66",
-    fontSize: 16,
-    fontWeight: "900",
-    letterSpacing: 0,
-    textAlign: "center",
-  },
-  portalFormSubtitle: {
-    color: "#607087",
-    fontSize: 10,
-    fontWeight: "700",
-    marginBottom: 6,
-    marginTop: 2,
-    textAlign: "center",
-  },
-  portalLabel: {
-    color: "#092d66",
-    fontSize: 8,
-    fontWeight: "900",
-    letterSpacing: 0,
-    marginBottom: 4,
-    marginTop: 5,
-    textTransform: "uppercase",
-  },
-  portalInputShell: {
-    alignItems: "center",
-    backgroundColor: "#fbfdff",
-    borderColor: "#dbe4f0",
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: "row",
-    height: 34,
-    overflow: "hidden",
-  },
-  portalInputIcon: {
-    alignItems: "center",
-    alignSelf: "stretch",
-    backgroundColor: "#f1f6fb",
-    borderRightColor: "#e0e8f2",
-    borderRightWidth: 1,
-    justifyContent: "center",
-    width: 34,
-  },
-  portalInputIconText: {
-    color: "#0f4592",
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  portalInput: {
-    color: "#10233f",
-    flex: 1,
-    fontSize: 10,
-    fontWeight: "700",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  portalEyeButton: {
-    paddingHorizontal: 10,
-  },
-  portalEyeText: {
-    color: "#7a879a",
-    fontSize: 8,
-    fontWeight: "900",
-  },
-  portalHelperText: {
-    color: "#5b6470",
-    fontSize: 8,
-    fontWeight: "700",
-    lineHeight: 12,
-    marginTop: 6,
-  },
-  portalErrorText: {
-    color: "#b42318",
-    fontSize: 9,
     fontWeight: "800",
-    marginTop: 7,
-  },
-  portalOptionsRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 7,
-    marginTop: 7,
-  },
-  portalRememberRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 5,
-  },
-  portalCheckBox: {
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#b8c6d8",
-    borderRadius: 4,
-    borderWidth: 1,
-    height: 13,
-    justifyContent: "center",
-    width: 13,
-  },
-  portalCheckBoxActive: {
-    backgroundColor: "#073b82",
-    borderColor: "#073b82",
-  },
-  portalCheckText: {
-    color: "transparent",
-    fontSize: 8,
-    fontWeight: "900",
-    lineHeight: 8,
-  },
-  portalRememberText: {
-    color: "#65758d",
-    fontSize: 8,
-    fontWeight: "700",
-  },
-  portalForgotText: {
-    color: "#1458bf",
-    fontSize: 8,
-    fontWeight: "800",
-  },
-  portalLoginButton: {
-    alignItems: "center",
-    backgroundColor: "#073b82",
-    borderRadius: 999,
-    elevation: 5,
-    flexDirection: "row",
-    justifyContent: "center",
-    minHeight: 34,
-    shadowColor: "#073b82",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-  },
-  portalLoginText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  portalOrRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 7,
-    marginTop: 7,
-  },
-  portalOrLine: {
-    backgroundColor: "#e4c46b",
-    flex: 1,
-    height: 1,
-  },
-  portalOrBubble: {
-    alignItems: "center",
-    backgroundColor: "#fff7df",
-    borderRadius: 999,
-    height: 18,
-    justifyContent: "center",
-    width: 18,
-  },
-  portalOrText: {
-    color: "#6b7280",
-    fontSize: 8,
-    fontWeight: "900",
-  },
-  portalAdminButton: {
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#9db1d1",
-    borderRadius: 999,
-    borderWidth: 1.2,
-    flexDirection: "row",
-    justifyContent: "center",
-    minHeight: 30,
-  },
-  portalAdminText: {
-    color: "#0b397b",
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  portalFooter: {
-    alignItems: "center",
-    bottom: 9,
-    left: 34,
-    position: "absolute",
-    right: 34,
-    zIndex: 2,
-  },
-  portalFooterText: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "600",
-    lineHeight: 13,
-    textAlign: "center",
-  },
-  portalFooterAuthor: {
-    color: "#efc44d",
-    fontSize: 9,
-    fontWeight: "900",
-    marginTop: 3,
+    letterSpacing: 0.3,
+    marginTop: 4,
   },
   appShell: {
     flex: 1,
-    backgroundColor: "#f7f9fd",
+    backgroundColor: "#f4f8f5",
   },
   header: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#e8eef7",
-    borderRadius: 14,
+    borderColor: "#e1ebe5",
+    borderRadius: 16,
     borderWidth: 1,
     elevation: 4,
     flexDirection: "row",
     gap: 10,
     justifyContent: "space-between",
-    marginHorizontal: 10,
+    marginHorizontal: 12,
     marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
-    shadowRadius: 16,
+    shadowRadius: 14,
   },
   headerBrandRow: {
     alignItems: "center",
@@ -6816,22 +7421,22 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   headerSchool: {
-    color: "#092d66",
-    fontSize: 11,
+    color: "#064e3b",
+    fontSize: 12,
     fontWeight: "900",
-    letterSpacing: 0,
+    letterSpacing: 0.2,
     textTransform: "uppercase",
   },
   headerTitle: {
-    color: "#30415d",
-    fontSize: 11,
+    color: "#2d4a3e",
+    fontSize: 12,
     fontWeight: "800",
     marginTop: 2,
   },
   roleBadge: {
     alignSelf: "flex-start",
-    backgroundColor: "#fff4d6",
-    borderColor: "#f3c44d",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
     borderRadius: 999,
     borderWidth: 1,
     marginTop: 5,
@@ -6839,10 +7444,10 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   roleBadgeText: {
-    color: "#9a6500",
-    fontSize: 9,
+    color: "#047857",
+    fontSize: 9.5,
     fontWeight: "900",
-    letterSpacing: 0,
+    letterSpacing: 0.2,
     textTransform: "uppercase",
   },
   headerActions: {
@@ -6878,57 +7483,58 @@ const styles = StyleSheet.create({
     paddingBottom: 116,
   },
   sectionTabsWrap: {
-    borderBottomColor: "transparent",
-    borderBottomWidth: 0,
-    marginBottom: 10,
-    paddingBottom: 0,
+    marginBottom: 12,
   },
   sectionTabsBar: {
     flexDirection: "row",
-    gap: 16,
+    gap: 8,
     paddingHorizontal: 2,
+    alignItems: "center",
   },
   sectionTabButton: {
     alignItems: "center",
-    borderBottomColor: "transparent",
-    borderBottomWidth: 2,
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 999,
+    borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    paddingBottom: 7,
-    paddingHorizontal: 2,
-    paddingTop: 2,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
   },
   sectionTabButtonActive: {
-    borderBottomColor: "#2f68ff",
+    backgroundColor: "#047857",
+    borderColor: "#047857",
+    elevation: 2,
+    shadowColor: "#047857",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   sectionTabIcon: {
-    backgroundColor: "#092d66",
-    borderColor: "#092d66",
-    borderRadius: 3,
-    borderWidth: 1,
-    height: 13,
-    width: 13,
+    display: "none",
   },
   sectionTabText: {
-    color: "#4d5e78",
-    fontSize: 11,
-    fontWeight: "900",
+    color: "#475569",
+    fontSize: 11.5,
+    fontWeight: "800",
   },
   sectionTabTextActive: {
-    color: "#092d66",
+    color: "#ffffff",
+    fontWeight: "900",
   },
   teacherHomeShell: {
     gap: 12,
   },
   teacherClassCard: {
-    backgroundColor: "#08377e",
+    backgroundColor: "#047857",
     borderRadius: 12,
     elevation: 4,
     minHeight: 124,
     overflow: "hidden",
     padding: 12,
     position: "relative",
-    shadowColor: "#08377e",
+    shadowColor: "#047857",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 16,
@@ -6962,7 +7568,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   teacherClassMeta: {
-    color: "#d9e8ff",
+    color: "#ecfdf5",
     fontSize: 9,
     fontWeight: "800",
     marginTop: 2,
@@ -6980,7 +7586,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   teacherClassYear: {
-    color: "#d9e8ff",
+    color: "#ecfdf5",
     fontSize: 9,
     fontWeight: "800",
   },
@@ -7051,7 +7657,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   teacherStatValue: {
-    color: "#08377e",
+    color: "#047857",
     fontSize: 24,
     fontWeight: "900",
     lineHeight: 26,
@@ -7071,9 +7677,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   teacherSectionTitle: {
-    color: "#092d66",
+    color: "#064e3b",
     fontSize: 13,
     fontWeight: "900",
+  },
+  teacherSectionMeta: {
+    color: "#64748b",
+    fontSize: 10.5,
+    fontWeight: "600",
+    marginTop: 1,
   },
   teacherSectionUnderline: {
     backgroundColor: "#f2b02e",
@@ -7089,7 +7701,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     elevation: 3,
     overflow: "hidden",
-    shadowColor: "#0b2f63",
+    shadowColor: "#06372b",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
@@ -7127,7 +7739,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   teacherFeatureTitle: {
-    color: "#092d66",
+    color: "#064e3b",
     fontSize: 11,
     fontWeight: "900",
   },
@@ -7143,90 +7755,1833 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   tabDock: {
-    backgroundColor: "#fff",
-    borderColor: "#e7eef7",
-    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.98)",
+    borderColor: "#e2e8f0",
+    borderRadius: 22,
     borderWidth: 1,
-    bottom: 10,
-    elevation: 8,
+    bottom: Platform.OS === "ios" ? 20 : 12,
+    elevation: 10,
     left: 12,
-    paddingBottom: 7,
-    paddingTop: 7,
+    paddingBottom: 6,
+    paddingTop: 6,
     position: "absolute",
     right: 12,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.1,
     shadowRadius: 16,
   },
   parentTabScroller: {
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
   parentTabBar: {
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
     gap: 4,
   },
   parentTabButton: {
     alignItems: "center",
     backgroundColor: "transparent",
-    borderColor: "transparent",
-    borderRadius: 10,
-    borderWidth: 0,
+    borderRadius: 16,
     flex: 1,
     flexBasis: 0,
     justifyContent: "center",
-    minHeight: 46,
     minWidth: 0,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     paddingVertical: 4,
   },
   parentTabButtonActive: {
-    backgroundColor: "#0b4eb0",
-    elevation: 3,
-    shadowColor: "#0b4eb0",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    borderWidth: 1,
-    borderColor: "#2f6eff",
+    backgroundColor: "transparent",
+  },
+  parentTabButtonPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.96 }],
   },
   parentTabBadge: {
     alignItems: "center",
     backgroundColor: "transparent",
-    borderColor: "transparent",
-    borderRadius: 999,
-    borderWidth: 0,
-    height: 18,
+    borderRadius: 16,
+    height: 32,
     justifyContent: "center",
-    marginBottom: 2,
-    width: 22,
+    marginBottom: 3,
+    width: 44,
   },
   parentTabBadgeActive: {
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "#ecfdf5",
   },
   parentTabBadgeIcon: {
-    lineHeight: 16,
+    lineHeight: 22,
   },
   parentTabBadgeImage: {
-    height: 16,
-    width: 16,
+    height: 22,
+    width: 22,
   },
   parentTabBadgeText: {
-    color: "#63708a",
+    color: "#64748b",
     fontSize: 14,
-    fontWeight: "900",
+    fontWeight: "700",
   },
   parentTabBadgeTextActive: {
-    color: "#fff",
+    color: "#047857",
   },
   parentTabText: {
-    color: "#63708a",
-    fontSize: 9,
-    fontWeight: "900",
+    color: "#64748b",
+    fontSize: 10.5,
+    fontWeight: "600",
+    letterSpacing: 0.1,
     textAlign: "center",
   },
   parentTabTextActive: {
-    color: "#fff",
+    color: "#047857",
+    fontWeight: "800",
+  },
+  studentHeaderBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  studentHeaderBadgeText: {
+    color: "#047857",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  avatarOnlineDot: {
+    backgroundColor: "#10b981",
+    borderColor: "#ffffff",
+    borderRadius: 999,
+    borderWidth: 2,
+    bottom: 0,
+    height: 12,
+    position: "absolute",
+    right: 0,
+    width: 12,
+  },
+  studentHomeShell: {
+    gap: 14,
+  },
+  studentHeroCard: {
+    backgroundColor: "#064e3b",
+    borderColor: "#059669",
+    borderRadius: 22,
+    borderWidth: 1,
+    elevation: 6,
+    overflow: "hidden",
+    padding: 16,
+    shadowColor: "#047857",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+  },
+  studentHeroCardTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  studentHeroBrandWrap: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 9,
+    flex: 1,
+  },
+  studentHeroLogoWrap: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  studentHeroLogo: {
+    height: 32,
+    width: 32,
+  },
+  studentHeroSchoolText: {
+    flex: 1,
+  },
+  studentHeroSchoolName: {
+    color: "#ffd15c",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  studentHeroPortalLabel: {
+    color: "#a7f3d0",
+    fontSize: 8.5,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    marginTop: 1,
+  },
+  studentVerifiedBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    borderColor: "rgba(167, 243, 208, 0.4)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  studentVerifiedBadgeText: {
+    color: "#ecfdf5",
+    fontSize: 9.5,
+    fontWeight: "800",
+  },
+  studentHeroIdentityRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    paddingVertical: 4,
+  },
+  studentHeroAvatarBorder: {
+    alignItems: "center",
+    borderColor: "rgba(255, 255, 255, 0.35)",
+    borderRadius: 999,
+    borderWidth: 2,
+    height: 62,
+    justifyContent: "center",
+    position: "relative",
+    width: 62,
+  },
+  studentHeroAvatarImg: {
+    borderRadius: 999,
+    height: 56,
+    width: 56,
+  },
+  studentHeroStarBadge: {
+    alignItems: "center",
+    backgroundColor: "#ffd15c",
+    borderRadius: 999,
+    bottom: -2,
+    height: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: -2,
+    width: 18,
+  },
+  studentHeroBio: {
+    flex: 1,
+    minWidth: 0,
+  },
+  studentHeroGreeting: {
+    color: "#a7f3d0",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  studentHeroStudentName: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: 0.2,
+    marginTop: 2,
+  },
+  studentHeroPillsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  studentHeroPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  studentHeroPillText: {
+    color: "#ecfdf5",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  studentHeroCardFooter: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.22)",
+    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  studentHeroFooterLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    flex: 1,
+  },
+  studentHeroFooterText: {
+    color: "#a7f3d0",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  studentHeroFooterRight: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+  studentHeroFooterLink: {
+    color: "#ffd15c",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  studentAttendanceCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 20,
+    borderWidth: 1,
+    elevation: 3,
+    padding: 15,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+  },
+  studentCardHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  studentCardHeaderIcon: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderRadius: 10,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  studentCardHeaderTitles: {
+    flex: 1,
+  },
+  studentCardSectionTitle: {
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  studentCardSectionMeta: {
+    color: "#059669",
+    fontSize: 10.5,
+    fontWeight: "700",
+    marginTop: 1,
+  },
+  studentCardHeaderLink: {
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 2,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  studentCardHeaderLinkText: {
+    color: "#047857",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  studentAttendanceMeterBlock: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#f1f5f9",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12,
+  },
+  studentAttendanceScoreRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  studentAttendancePercentWrap: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+  },
+  studentAttendancePercentText: {
+    color: "#047857",
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  studentAttendancePercentLabel: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  studentAttendanceStatusPill: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  studentAttendanceStatusText: {
+    color: "#334155",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  studentProgressBarTrack: {
+    backgroundColor: "#e2e8f0",
+    borderRadius: 999,
+    height: 7,
+    overflow: "hidden",
+    width: "100%",
+  },
+  studentProgressBarFill: {
+    backgroundColor: "#10b981",
+    borderRadius: 999,
+    height: "100%",
+  },
+  studentProgressBarLow: {
+    backgroundColor: "#f59e0b",
+  },
+  studentMetricsGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+  },
+  studentMetricPillCard: {
+    alignItems: "center",
+    borderRadius: 12,
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  studentMetricPresent: {
+    backgroundColor: "#ecfdf5",
+  },
+  studentMetricAbsent: {
+    backgroundColor: "#fff1f2",
+  },
+  studentMetricLate: {
+    backgroundColor: "#fffbeb",
+  },
+  studentMetricDays: {
+    backgroundColor: "#f0f9ff",
+  },
+  studentMetricNum: {
+    color: "#059669",
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+  studentMetricTag: {
+    color: "#64748b",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 1,
+    textTransform: "uppercase",
+  },
+  studentServicesSection: {
+    marginTop: 4,
+  },
+  studentSectionTitleWrap: {
+    marginBottom: 10,
+  },
+  studentSectionTitle: {
+    color: "#0f172a",
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 0.1,
+  },
+  studentSectionMeta: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  studentServicesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  studentServiceCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
+    flexBasis: "48%",
+    flexGrow: 1,
+    minHeight: 110,
+    padding: 13,
+    position: "relative",
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+  },
+  cardPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  studentServiceIconWrap: {
+    alignItems: "center",
+    borderRadius: 12,
+    height: 38,
+    justifyContent: "center",
+    marginBottom: 8,
+    width: 38,
+  },
+  studentServiceBody: {
+    flex: 1,
+  },
+  studentServiceTitle: {
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  studentServiceSubtitle: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "700",
+    lineHeight: 13,
+    marginTop: 2,
+  },
+  studentServiceArrowWrap: {
+    bottom: 12,
+    position: "absolute",
+    right: 12,
+  },
+  studentNoticeSection: {
+    marginTop: 6,
+  },
+  studentHelpdeskCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#d1fae5",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
+    marginTop: 4,
+    padding: 14,
+  },
+  studentHelpdeskTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 7,
+  },
+  studentHelpdeskTitle: {
+    color: "#047857",
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+  studentHelpdeskBody: {
+    color: "#64748b",
+    fontSize: 10.5,
+    fontWeight: "600",
+    lineHeight: 15,
+    marginTop: 4,
+  },
+  studentHelpdeskRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  studentHelpdeskBtn: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  studentHelpdeskBtnText: {
+    color: "#047857",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  studentAttendancePage: {
+    gap: 14,
+  },
+  studentAttBannerCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 20,
+    borderWidth: 1,
+    elevation: 3,
+    padding: 16,
+  },
+  studentAttBannerTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  studentAttBannerEyebrow: {
+    color: "#047857",
+    fontSize: 9.5,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+  },
+  studentAttBannerScore: {
+    color: "#0f172a",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  studentAttBannerPill: {
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  studentAttBannerPillText: {
+    color: "#047857",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  studentAttHistorySection: {
+    gap: 10,
+  },
+  studentAttEmptyCard: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 8,
+    padding: 24,
+  },
+  studentAttEmptyTitle: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  studentAttEmptyText: {
+    color: "#64748b",
+    fontSize: 11.5,
+    textAlign: "center",
+  },
+  studentAttRecordList: {
+    gap: 8,
+  },
+  studentAttRecordRow: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    borderWidth: 1,
+    elevation: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 11,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+  },
+  studentAttDateBadge: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  studentAttDayNumber: {
+    color: "#047857",
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  studentAttMonthText: {
+    color: "#059669",
+    fontSize: 8.5,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  studentAttRecordDetails: {
+    flex: 1,
+  },
+  studentAttRecordDay: {
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  studentAttRecordFullDate: {
+    color: "#64748b",
+    fontSize: 10.5,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  studentAttRecordRemark: {
+    color: "#94a3b8",
+    fontSize: 10,
+    fontStyle: "italic",
+    marginTop: 2,
+  },
+  studentAttStatusPill: {
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  studentAttPillPresent: {
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+  },
+  studentAttPillAbsent: {
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecdd3",
+  },
+  studentAttPillLate: {
+    backgroundColor: "#fffbeb",
+    borderColor: "#fde68a",
+  },
+  studentAttStatusText: {
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  digitalIdCard: {
+    backgroundColor: "#064e3b",
+    borderColor: "#059669",
+    borderRadius: 22,
+    borderWidth: 1,
+    elevation: 6,
+    overflow: "hidden",
+    shadowColor: "#047857",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+  },
+  digitalIdHeader: {
+    alignItems: "center",
+    backgroundColor: "#047857",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  digitalIdHeaderLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    flex: 1,
+  },
+  digitalIdHeaderLogoWrap: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 10,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  digitalIdHeaderLogo: {
+    height: 30,
+    width: 30,
+  },
+  digitalIdSchoolName: {
+    color: "#ffd15c",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  digitalIdSubtitle: {
+    color: "#ecfdf5",
+    fontSize: 8.5,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+    marginTop: 1,
+  },
+  digitalIdChip: {
+    backgroundColor: "#ffd15c",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  digitalIdChipText: {
+    color: "#064e3b",
+    fontSize: 8.5,
+    fontWeight: "900",
+  },
+  digitalIdBody: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    padding: 16,
+  },
+  digitalIdAvatarWrap: {
+    borderColor: "#ffd15c",
+    borderRadius: 999,
+    borderWidth: 2,
+    height: 68,
+    position: "relative",
+    width: 68,
+  },
+  digitalIdAvatar: {
+    borderRadius: 999,
+    height: 64,
+    width: 64,
+  },
+  digitalIdActiveDot: {
+    alignItems: "center",
+    backgroundColor: "#10b981",
+    borderRadius: 999,
+    bottom: 0,
+    height: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: 0,
+    width: 18,
+  },
+  digitalIdStudentInfo: {
+    flex: 1,
+  },
+  digitalIdStudentName: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  digitalIdTagsRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 5,
+  },
+  digitalIdTag: {
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  digitalIdTagText: {
+    color: "#ecfdf5",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  digitalIdStudentAdm: {
+    color: "#a7f3d0",
+    fontSize: 9.5,
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  digitalIdBarcodeRow: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.24)",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  digitalIdBarcodeBars: {
+    flex: 1,
+  },
+  digitalIdBarcodeSymbol: {
+    color: "#ffd15c",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+  digitalIdBarcodeNumber: {
+    color: "#a7f3d0",
+    fontSize: 8.5,
+    fontWeight: "800",
+  },
+  profileSectionHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  profileSectionIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderRadius: 8,
+    height: 26,
+    justifyContent: "center",
+    width: 26,
+  },
+  profileMenuList: {
+    gap: 8,
+  },
+  profileMenuItem: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    padding: 12,
+  },
+  profileMenuIconWrap: {
+    alignItems: "center",
+    borderRadius: 10,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  profileMenuTextWrap: {
+    flex: 1,
+  },
+  profileMenuLabel: {
+    color: "#0f172a",
+    fontSize: 12.5,
+    fontWeight: "800",
+  },
+  profileMenuSub: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  studentLogoutButton: {
+    alignItems: "center",
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecdd3",
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 16,
+    paddingVertical: 14,
+  },
+  studentLogoutButtonText: {
+    color: "#e11d48",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  teacherHeaderBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  teacherHeaderBadgeText: {
+    color: "#047857",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  teacherHeaderLogoutBtn: {
+    alignItems: "center",
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecdd3",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  teacherHeaderLogoutText: {
+    color: "#e11d48",
+    fontSize: 10.5,
+    fontWeight: "900",
+  },
+  teacherHeroCard: {
+    backgroundColor: "#064e3b",
+    borderColor: "#059669",
+    borderRadius: 22,
+    borderWidth: 1,
+    elevation: 6,
+    overflow: "hidden",
+    padding: 16,
+    shadowColor: "#047857",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+  },
+  teacherHeroCardTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  teacherHeroBrandWrap: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 9,
+    flex: 1,
+  },
+  teacherHeroLogoWrap: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  teacherHeroLogo: {
+    height: 32,
+    width: 32,
+  },
+  teacherHeroSchoolText: {
+    flex: 1,
+  },
+  teacherHeroSchoolName: {
+    color: "#ffd15c",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  teacherHeroPortalLabel: {
+    color: "#a7f3d0",
+    fontSize: 8.5,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    marginTop: 1,
+  },
+  teacherVerifiedBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.18)",
+    borderColor: "rgba(167, 243, 208, 0.4)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  teacherVerifiedBadgeText: {
+    color: "#ecfdf5",
+    fontSize: 9.5,
+    fontWeight: "800",
+  },
+  teacherHeroIdentityRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    paddingVertical: 4,
+  },
+  teacherHeroAvatarBorder: {
+    alignItems: "center",
+    borderColor: "rgba(255, 255, 255, 0.35)",
+    borderRadius: 999,
+    borderWidth: 2,
+    height: 62,
+    justifyContent: "center",
+    position: "relative",
+    width: 62,
+  },
+  teacherHeroAvatarInner: {
+    alignItems: "center",
+    backgroundColor: "#047857",
+    borderRadius: 999,
+    height: 56,
+    justifyContent: "center",
+    width: 56,
+  },
+  teacherHeroAvatarText: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  teacherHeroStarBadge: {
+    alignItems: "center",
+    backgroundColor: "#ffd15c",
+    borderRadius: 999,
+    bottom: -2,
+    height: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: -2,
+    width: 18,
+  },
+  teacherHeroBio: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teacherHeroGreeting: {
+    color: "#a7f3d0",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  teacherHeroTeacherName: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: 0.2,
+    marginTop: 2,
+  },
+  teacherHeroPillsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  teacherHeroPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  teacherHeroPillText: {
+    color: "#ecfdf5",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  teacherHeroCardFooter: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.22)",
+    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  teacherHeroFooterLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    flex: 1,
+  },
+  teacherHeroFooterText: {
+    color: "#a7f3d0",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  teacherHeroFooterRight: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+  },
+  teacherHeroFooterLink: {
+    color: "#ffd15c",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  teacherAttendanceCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 20,
+    borderWidth: 1,
+    elevation: 3,
+    padding: 15,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+  },
+  teacherCardHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 4,
+  },
+  teacherCardHeaderIcon: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderRadius: 10,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  teacherCardHeaderTitles: {
+    flex: 1,
+  },
+  teacherCardSectionTitle: {
+    color: "#0f172a",
+    fontSize: 13.5,
+    fontWeight: "900",
+  },
+  teacherCardSectionMeta: {
+    color: "#059669",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 1,
+  },
+  teacherCardHeaderLink: {
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  teacherCardHeaderLinkText: {
+    color: "#047857",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  teacherAttendanceMeterBlock: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#f1f5f9",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12,
+  },
+  teacherAttendanceScoreRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  teacherAttendancePercentWrap: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    gap: 6,
+  },
+  teacherAttendancePercentText: {
+    color: "#047857",
+    fontSize: 26,
+    fontWeight: "900",
+  },
+  teacherAttendancePercentLabel: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  teacherAttendanceStatusPill: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  teacherAttendanceStatusText: {
+    color: "#334155",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  teacherProgressBarTrack: {
+    backgroundColor: "#e2e8f0",
+    borderRadius: 999,
+    height: 7,
+    overflow: "hidden",
+    width: "100%",
+  },
+  teacherProgressBarFill: {
+    backgroundColor: "#10b981",
+    borderRadius: 999,
+    height: "100%",
+  },
+  teacherMetricsGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+  },
+  teacherMetricPillCard: {
+    alignItems: "center",
+    borderRadius: 12,
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  teacherMetricStudents: {
+    backgroundColor: "#f0f9ff",
+  },
+  teacherMetricPresent: {
+    backgroundColor: "#ecfdf5",
+  },
+  teacherMetricAbsent: {
+    backgroundColor: "#fff1f2",
+  },
+  teacherMetricLate: {
+    backgroundColor: "#fffbeb",
+  },
+  teacherMetricNum: {
+    color: "#059669",
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 3,
+  },
+  teacherMetricTag: {
+    color: "#64748b",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 1,
+    textTransform: "uppercase",
+  },
+  teacherServicesSection: {
+    marginTop: 4,
+  },
+  teacherServicesGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  teacherServiceCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
+    flexBasis: "48%",
+    flexGrow: 1,
+    minHeight: 110,
+    padding: 13,
+    position: "relative",
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+  },
+  teacherServiceIconWrap: {
+    alignItems: "center",
+    borderRadius: 12,
+    height: 38,
+    justifyContent: "center",
+    marginBottom: 8,
+    width: 38,
+  },
+  teacherServiceBody: {
+    flex: 1,
+  },
+  teacherServiceTitle: {
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  teacherServiceSubtitle: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "700",
+    lineHeight: 13,
+    marginTop: 2,
+  },
+  teacherServiceArrowWrap: {
+    bottom: 12,
+    position: "absolute",
+    right: 12,
+  },
+  teacherToolsSection: {
+    marginTop: 6,
+  },
+  teacherToolsList: {
+    gap: 8,
+  },
+  teacherToolItem: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    borderWidth: 1,
+    elevation: 1,
+    flexDirection: "row",
+    gap: 12,
+    padding: 12,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+  },
+  teacherToolIconWrap: {
+    alignItems: "center",
+    borderRadius: 12,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  teacherToolTextWrap: {
+    flex: 1,
+  },
+  teacherToolLabel: {
+    color: "#0f172a",
+    fontSize: 12.5,
+    fontWeight: "800",
+  },
+  teacherToolSub: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  attendanceBulkRow: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  attendanceBulkLabel: {
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  attendanceBulkButtons: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  attendanceBulkBtn: {
+    alignItems: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  attendanceBulkPresent: {
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+  },
+  attendanceBulkAbsent: {
+    backgroundColor: "#fff1f2",
+    borderColor: "#fecdd3",
+  },
+  attendanceBulkBtnTextPresent: {
+    color: "#047857",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  attendanceBulkBtnTextAbsent: {
+    color: "#e11d48",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  attendanceStudentInfo: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    flex: 1,
+  },
+  attendanceAvatar: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderRadius: 10,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  attendanceAvatarText: {
+    color: "#047857",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  marksPanelContainer: {
+    paddingBottom: 20,
+  },
+  marksHeroShell: {
+    backgroundColor: "#064e3b",
+    borderRadius: 20,
+    elevation: 3,
+    marginBottom: 12,
+    padding: 16,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+  },
+  marksHeroTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  marksHeroBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(167, 243, 208, 0.15)",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  marksHeroBadgeText: {
+    color: "#a7f3d0",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  marksHeroTitle: {
+    color: "#ffffff",
+    fontSize: 17,
+    fontWeight: "900",
+    marginTop: 8,
+  },
+  marksHeroSub: {
+    color: "#a7f3d0",
+    fontSize: 11.5,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  marksTerminalPillsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 14,
+  },
+  marksTerminalPill: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  marksTerminalPillActive: {
+    backgroundColor: "#ffffff",
+    borderColor: "#ffffff",
+  },
+  marksTerminalPillText: {
+    color: "#d1fae5",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  marksTerminalPillTextActive: {
+    color: "#064e3b",
+    fontWeight: "900",
+  },
+  marksStudentSpotlightCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
+    marginBottom: 12,
+    padding: 14,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+  },
+  marksStudentMainRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  marksStudentAvatarWrap: {
+    alignItems: "center",
+    backgroundColor: "#047857",
+    borderRadius: 999,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  marksStudentAvatarText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  marksStudentInfoCol: {
+    flex: 1,
+  },
+  marksStudentName: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  marksStudentTagsRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    marginTop: 3,
+  },
+  marksStudentRollPill: {
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  marksStudentRollText: {
+    color: "#047857",
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  marksStudentAdmText: {
+    color: "#64748b",
+    fontSize: 10.5,
+    fontWeight: "700",
+  },
+  marksStepperRow: {
+    alignItems: "center",
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+    paddingTop: 10,
+  },
+  marksStepperBtn: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  marksStepperBtnDisabled: {
+    opacity: 0.4,
+  },
+  marksStepperBtnText: {
+    color: "#334155",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  marksStepperCounter: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  marksRosterToggle: {
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    marginTop: 10,
+    paddingVertical: 7,
+  },
+  marksRosterToggleText: {
+    color: "#047857",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  marksRosterSheet: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+    padding: 10,
+  },
+  marksRosterSearchInput: {
+    backgroundColor: "#ffffff",
+    borderColor: "#cbd5e1",
+    borderRadius: 10,
+    borderWidth: 1,
+    fontSize: 12,
+    height: 38,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+  },
+  marksRosterItem: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#f1f5f9",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  marksRosterItemActive: {
+    backgroundColor: "#ecfdf5",
+    borderColor: "#a7f3d0",
+  },
+  marksRosterItemName: {
+    color: "#0f172a",
+    fontSize: 12.5,
+    fontWeight: "800",
+  },
+  marksRosterItemMeta: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  marksSummaryCard: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 12,
+    padding: 14,
+  },
+  marksSummaryHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  marksSummaryHeaderTitle: {
+    color: "#064e3b",
+    fontSize: 12.5,
+    fontWeight: "900",
+  },
+  marksSummaryGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  marksSummaryBox: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#d1fae5",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+  },
+  marksSummaryBoxNum: {
+    color: "#047857",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  marksSummaryBoxLabel: {
+    color: "#64748b",
+    fontSize: 9.5,
+    fontWeight: "800",
+    marginTop: 2,
+    textTransform: "uppercase",
+  },
+  marksItemCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
+    marginBottom: 10,
+    padding: 14,
+    shadowColor: "#06372b",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+  },
+  marksItemHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+  },
+  marksItemIconWrap: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderRadius: 10,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  marksItemTitles: {
+    flex: 1,
+  },
+  marksItemName: {
+    color: "#0f172a",
+    fontSize: 13.5,
+    fontWeight: "900",
+  },
+  marksItemMeta: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 1,
+  },
+  marksItemScorePill: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  marksItemScoreText: {
+    color: "#047857",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  marksItemInputRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  marksItemInputCol: {
+    flex: 1,
+  },
+  marksFieldLabel: {
+    color: "#475569",
+    fontSize: 10.5,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  marksInputEnhanced: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#cbd5e1",
+    borderRadius: 12,
+    borderWidth: 1,
+    color: "#0f172a",
+    fontSize: 16,
+    fontWeight: "800",
+    height: 44,
+    paddingHorizontal: 12,
+    textAlign: "center",
+  },
+  marksInputError: {
+    backgroundColor: "#fff1f2",
+    borderColor: "#f43f5e",
+  },
+  marksDrawingBanner: {
+    backgroundColor: "#fffbeb",
+    borderColor: "#fef3c7",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  marksDrawingBannerText: {
+    color: "#92400e",
+    fontSize: 10.5,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  marksNextStudentAction: {
+    alignItems: "center",
+    backgroundColor: "#ecfdf5",
+    borderColor: "#10b981",
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    marginBottom: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  marksNextStudentText: {
+    color: "#047857",
+    fontSize: 12.5,
+    fontWeight: "900",
   },
 });
 

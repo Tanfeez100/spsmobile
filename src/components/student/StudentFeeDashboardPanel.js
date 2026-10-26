@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { getStudentFeeDashboard } from "../../api/client";
+import { colors } from "../../theme/colors";
 
 const currency = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
@@ -27,9 +28,9 @@ const formatDate = (value) => {
 const getCurrentYear = () => String(new Date().getFullYear());
 
 const statusTone = {
-  paid: { backgroundColor: "#dcfce7", color: "#166534" },
-  partial: { backgroundColor: "#fef3c7", color: "#92400e" },
-  unpaid: { backgroundColor: "#fee2e2", color: "#991b1b" },
+  paid: { backgroundColor: colors.successBg, color: colors.successText },
+  partial: { backgroundColor: colors.warningBg, color: colors.warningText },
+  unpaid: { backgroundColor: colors.dangerBg, color: colors.dangerText },
 };
 
 export default function StudentFeeDashboardPanel({ session, student }) {
@@ -136,7 +137,7 @@ export default function StudentFeeDashboardPanel({ session, student }) {
       <View style={styles.headerRow}>
         <View style={styles.headerTextBlock}>
           <View style={styles.sectionTitleRow}>
-            <Feather name="credit-card" size={18} color="#1458bf" />
+            <Feather name="credit-card" size={18} color={colors.primaryDark} />
             <Text style={styles.sectionTitle}>Fee Dashboard</Text>
           </View>
           <Text style={styles.sectionSubtitle}>
@@ -382,7 +383,7 @@ function EmptyState({ title, text }) {
 function LoadingBlock({ label }) {
   return (
     <View style={styles.loadingBlock}>
-      <ActivityIndicator color="#126a6f" />
+      <ActivityIndicator color={colors.primaryDark} />
       <Text style={styles.loadingText}>{label}</Text>
     </View>
   );
@@ -402,7 +403,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    color: "#0b2f63",
+    color: colors.primaryDeep,
     fontSize: 22,
     fontWeight: "900",
   },
@@ -412,7 +413,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionSubtitle: {
-    color: "#6b7c95",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 4,
@@ -425,24 +426,29 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   yearChip: {
-    backgroundColor: "#fff",
-    borderColor: "#dfe7f2",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 9,
   },
   yearChipActive: {
-    backgroundColor: "#1458bf",
-    borderColor: "#1458bf",
+    backgroundColor: colors.primaryDark,
+    borderColor: colors.primaryDark,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 3,
   },
   yearChipText: {
-    color: "#334155",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "900",
   },
   yearChipTextActive: {
-    color: "#fff",
+    color: colors.white,
   },
   metricGrid: {
     flexDirection: "row",
@@ -450,8 +456,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   feeTabRow: {
-    backgroundColor: "#eef4fb",
-    borderColor: "#dbe6f2",
+    backgroundColor: colors.tintSoft,
+    borderColor: colors.tintBorder,
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
@@ -469,34 +475,40 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   feeTabButtonActive: {
-    backgroundColor: "#1458bf",
+    backgroundColor: colors.primaryDark,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
   },
   feeTabText: {
-    color: "#56708d",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "900",
   },
   feeTabTextActive: {
-    color: "#fff",
+    color: colors.white,
   },
   metricCard: {
     alignItems: "center",
-    borderColor: "#edf2fa",
+    borderColor: colors.cardBorder,
     flexDirection: "row",
     borderRadius: 22,
     borderWidth: 1,
     gap: 12,
     minHeight: 102,
     padding: 16,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
     shadowRadius: 14,
     width: "48%",
+    elevation: 2,
   },
   metricIconWrap: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.66)",
+    backgroundColor: colors.white,
     borderRadius: 999,
     height: 44,
     justifyContent: "center",
@@ -506,7 +518,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   metric_teal: {
-    backgroundColor: "#edf4ff",
+    backgroundColor: colors.tintSoft,
   },
   metric_green: {
     backgroundColor: "#ecfbf1",
@@ -518,14 +530,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff7e5",
   },
   metricLabel: {
-    color: "#5f6f86",
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.3,
     textTransform: "uppercase",
   },
   metricValue: {
-    color: "#0b2f63",
+    color: colors.primaryDeep,
     fontSize: 21,
     fontWeight: "900",
     marginTop: 10,
@@ -534,15 +546,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   card: {
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     padding: 14,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.04,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
     shadowRadius: 14,
+    elevation: 2,
   },
   cardHeader: {
     alignItems: "flex-start",
@@ -560,12 +573,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: "900",
   },
   cardMeta: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: "800",
     marginTop: 4,
@@ -585,7 +598,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   expandHeaderLabel: {
-    color: "#1458bf",
+    color: colors.primaryDark,
     fontSize: 11,
     fontWeight: "900",
   },
@@ -596,8 +609,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   paymentCollapsedSummary: {
-    backgroundColor: "#f8fbff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.tintSoft,
+    borderColor: colors.tintBorder,
     borderRadius: 16,
     borderWidth: 1,
     marginTop: 10,
@@ -605,7 +618,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   paymentCollapsedText: {
-    color: "#667085",
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 18,
@@ -617,41 +630,41 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   detailPill: {
-    backgroundColor: "#f8fbff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.tintSoft,
+    borderColor: colors.tintBorder,
     borderRadius: 16,
     borderWidth: 1,
     minWidth: "47%",
     padding: 10,
   },
   detailLabel: {
-    color: "#52606d",
+    color: colors.textMuted,
     fontSize: 10,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   detailValue: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 4,
   },
   latestRow: {
-    backgroundColor: "#f8fbff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.tintSoft,
+    borderColor: colors.tintBorder,
     borderRadius: 16,
     borderWidth: 1,
     marginTop: 12,
     padding: 10,
   },
   latestLabel: {
-    color: "#52606d",
+    color: colors.textMuted,
     fontSize: 10,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   latestValue: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 12,
     fontWeight: "800",
     marginTop: 4,
@@ -660,32 +673,32 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   itemsLabel: {
-    color: "#52606d",
+    color: colors.textMuted,
     fontSize: 10,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   itemRow: {
     alignItems: "center",
-    borderBottomColor: "#eef2f7",
+    borderBottomColor: colors.cardBorder,
     borderBottomWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 8,
   },
   itemName: {
-    color: "#17202a",
+    color: colors.textPrimary,
     flex: 1,
     fontSize: 12,
     fontWeight: "800",
   },
   itemAmount: {
-    color: "#0f5f63",
+    color: colors.primaryDark,
     fontSize: 12,
     fontWeight: "900",
   },
   moreText: {
-    color: "#64748b",
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: "800",
     marginTop: 8,
@@ -697,17 +710,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   noticeError: {
-    backgroundColor: "#fff3f1",
-    borderColor: "#f4c2ba",
+    backgroundColor: colors.dangerBg,
+    borderColor: colors.dangerBorder,
     borderWidth: 1,
   },
   noticeInfo: {
-    backgroundColor: "#eef7ff",
-    borderColor: "#c9defa",
+    backgroundColor: colors.tintSoft,
+    borderColor: colors.tintBorder,
     borderWidth: 1,
   },
   noticeText: {
-    color: "#17305d",
+    color: colors.primaryDeep,
     fontSize: 12,
     fontWeight: "800",
   },
@@ -718,24 +731,25 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     marginTop: 4,
     padding: 22,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
+    elevation: 2,
   },
   emptyTitle: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: "900",
   },
   emptyText: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 6,
@@ -746,12 +760,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   paymentHistoryTitle: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 17,
     fontWeight: "900",
   },
   paymentHistorySubtitle: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -760,15 +774,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   paymentHistoryCard: {
-    backgroundColor: "#fff",
-    borderColor: "#e3ebf5",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 22,
     borderWidth: 1,
     padding: 14,
-    shadowColor: "#0b2f63",
-    shadowOffset: { width: 0, height: 8 },
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
+    elevation: 2,
   },
   paymentHistoryHeader: {
     alignItems: "center",
@@ -781,18 +796,18 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   paymentHistoryMonth: {
-    color: "#17202a",
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: "900",
   },
   paymentHistoryMeta: {
-    color: "#667085",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 3,
   },
   paymentHistoryAmount: {
-    color: "#0f5f63",
+    color: colors.primaryDark,
     fontSize: 14,
     fontWeight: "900",
   },
@@ -809,15 +824,15 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   paymentHistoryFootText: {
-    color: "#64748b",
+    color: colors.textMuted,
     flex: 1,
     fontSize: 11,
     fontWeight: "700",
   },
   loadingBlock: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#dbe4f0",
+    backgroundColor: colors.surface,
+    borderColor: colors.cardBorder,
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
@@ -827,7 +842,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   loadingText: {
-    color: "#52606d",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "800",
   },
