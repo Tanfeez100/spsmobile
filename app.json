@@ -22,7 +22,8 @@
       }
     },
     "android": {
-      "package": "com.sps.schoolmobile",
+      "package": "com.spsmobile.app",
+      "versionCode": 1,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
