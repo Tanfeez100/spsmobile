@@ -47,7 +47,7 @@ export default function StudentResultsPanel({ student }) {
   const busy = loading || availabilityLoading;
 
   const helperText = useMemo(() => {
-    if (currentLocked) return "Result not published yet for this terminal. Terminal locked hai.";
+    if (currentLocked) return "Results for this terminal examination have not been published yet.";
     return error;
   }, [currentLocked, error]);
 
@@ -59,7 +59,7 @@ export default function StudentResultsPanel({ student }) {
         setAvailability({});
         setResult(null);
         setLoading(false);
-        setError("Student profile me class, roll number ya academic year missing hai.");
+        setError("Class, roll number or academic year is missing in student profile.");
         return;
       }
 
@@ -279,7 +279,7 @@ export default function StudentResultsPanel({ student }) {
       ) : null}
 
       {!busy && !result && !error && !currentLocked ? (
-        <EmptyState title="No result" text="Selected terminal ke liye result available nahi hai." />
+        <EmptyState title="No Results Published" text="Examination marks and results are not available for this terminal yet." />
       ) : null}
     </View>
   );

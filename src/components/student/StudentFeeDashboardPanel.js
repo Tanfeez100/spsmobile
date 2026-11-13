@@ -201,7 +201,7 @@ export default function StudentFeeDashboardPanel({ session, student }) {
             <Feather name="wallet" size={18} color="#1458bf" />
             <Text style={styles.paymentHistoryTitle}>Payment History</Text>
           </View>
-          <Text style={styles.paymentHistorySubtitle}>Sirf paid bills dikhaye gaye hain</Text>
+          <Text style={styles.paymentHistorySubtitle}>Showing verified fee receipts & payments</Text>
           <View style={styles.paymentHistoryList}>
             {paidPaymentRows.map((payment) => (
               <View key={payment.id} style={styles.paymentHistoryCard}>
@@ -320,7 +320,7 @@ export default function StudentFeeDashboardPanel({ session, student }) {
       {!loading && !billRows.length && !paidPaymentRows.length ? (
         <EmptyState
           title="No fee history"
-          text="Is year ke liye fee bills abhi available nahi hain."
+          text="No fee bills or dues have been issued for this academic year yet."
         />
       ) : null}
     </View>

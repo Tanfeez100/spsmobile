@@ -249,13 +249,14 @@ const teacherTabSections = [
     ],
   },
   {
+    
     key: "reportsHistory",
     title: "Reports",
     subtitle: "Analytics",
     tabs: [
-      { key: "gpsHistory", label: "My History" },
-      { key: "history", label: "History" },
-      { key: "reports", label: "Reports" },
+      { key: "reports", label: "Class Reports" },
+      { key: "history", label: "Student History" },
+      { key: "gpsHistory", label: "My Punch Log" },
     ],
   },
 ];
@@ -617,15 +618,15 @@ export default function App() {
 
   if (booting) {
     return (
-      <SafeAreaView style={[styles.centerScreen, { backgroundColor: "#064e3b" }]}>
+      <SafeAreaView style={[styles.centerScreen, { backgroundColor: "#1e3a8a" }]}>
         <ExpoStatusBar style="light" />
         <View style={styles.openingBrandCard}>
           <Image source={schoolLogo} style={styles.openingLogo} resizeMode="contain" />
           <Text style={[styles.openingTitle, { color: "#ffffff" }]}>{SCHOOL_NAME}</Text>
-          <Text style={[styles.openingSubtitle, { color: "#a7f3d0" }]}>Mobile School Portal</Text>
+          <Text style={[styles.openingSubtitle, { color: "#bfdbfe" }]}>Mobile School Portal</Text>
         </View>
         <ActivityIndicator color="#10b981" size="large" />
-        <Text style={[styles.loadingText, { color: "#ecfdf5", marginTop: 12 }]}>Preparing your campus dashboard...</Text>
+        <Text style={[styles.loadingText, { color: "#eff6ff", marginTop: 12 }]}>Preparing your campus dashboard...</Text>
       </SafeAreaView>
     );
   }
@@ -643,7 +644,7 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, !session && { backgroundColor: "#064e3b" }]}>
+    <SafeAreaView style={[styles.safeArea, !session && { backgroundColor: "#1e3a8a" }]}>
       <ExpoStatusBar style={session ? "dark" : "light"} />
       {session?.role === "student" && session.mustResetPassword ? (
         <StudentPasswordSetup session={session} onComplete={handleSession} onLogout={handleLogout} />
@@ -790,52 +791,38 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.portalFrame}>
-          <View style={styles.portalPhotoLayer}>
-            <Image source={schoolCelebration} style={styles.portalPhotoImage} resizeMode="cover" />
-            <View style={styles.portalPhotoWash} />
-          </View>
-          <View style={styles.portalWhiteSheet} />
-
+          {/* Header Section */}
           <View style={styles.portalHero}>
-            <View style={styles.portalLogoWrap}>
-              <View style={styles.portalLogoGlow} />
-              <View style={styles.portalLogoRing}>
-                <Image source={schoolLogo} style={styles.portalLogoImage} resizeMode="contain" />
-              </View>
+            <View style={styles.portalLogoRing}>
+              <Image source={schoolLogo} style={styles.portalLogoImage} resizeMode="contain" />
             </View>
 
-            <View style={styles.portalEyebrowRow}>
-              <Text style={styles.portalEyebrow}>{SCHOOL_SHORT_NAME} MOBILE PORTAL</Text>
-            </View>
             <Text style={styles.portalTitle}>{SCHOOL_NAME}</Text>
-            <Text style={styles.portalSubtitle}>{SCHOOL_TAGLINE}</Text>
+            <Text style={styles.portalSubtitle}>Faculty & Student Portal</Text>
           </View>
 
+          {/* Role Segmented Pill */}
           <View style={styles.portalSegment}>
             <View style={[styles.portalSegmentThumb, mode === "student" && styles.portalSegmentThumbRight]} />
-            <Pressable onPress={() => setMode("teacher")} style={styles.portalSegmentButton}>
+            <Pressable onPress={() => { setMode("teacher"); setError(""); }} style={styles.portalSegmentButton}>
               <Text style={[styles.portalSegmentText, mode === "teacher" && styles.portalSegmentTextActive]}>Teacher</Text>
             </Pressable>
-            <Pressable onPress={() => setMode("student")} style={styles.portalSegmentButton}>
+            <Pressable onPress={() => { setMode("student"); setError(""); }} style={styles.portalSegmentButton}>
               <Text style={[styles.portalSegmentText, mode === "student" && styles.portalSegmentTextActive]}>Student</Text>
             </Pressable>
           </View>
 
-          <View style={styles.portalFormCard}>
-            <Text style={styles.portalFormTitle}>Welcome Back!</Text>
-            <Text style={styles.portalFormSubtitle}>Sign in to continue to your dashboard</Text>
-
-            <Text style={styles.portalLabel}>{mode === "teacher" ? "EMAIL" : "USERNAME"}</Text>
+          {/* Main Form Fields */}
+          <View style={styles.portalFormContainer}>
+            <Text style={styles.portalLabel}>{mode === "teacher" ? "EMAIL ADDRESS" : "STUDENT USERNAME"}</Text>
             <View style={styles.portalInputShell}>
-              <View style={styles.portalInputIcon}>
-                <Feather name={mode === "teacher" ? "mail" : "user"} size={18} color="#047857" />
-              </View>
+              <Feather name={mode === "teacher" ? "mail" : "user"} size={17} color="#64748b" style={styles.portalInputLeadingIcon} />
               <TextInput
                 autoCapitalize={mode === "student" ? "characters" : "none"}
                 autoCorrect={false}
                 keyboardType={mode === "teacher" ? "email-address" : "default"}
                 onChangeText={setIdentity}
-                onFocus={() => handleInputFocus(120)}
+                onFocus={() => handleInputFocus(100)}
                 placeholder={mode === "teacher" ? "teacher@school.com" : "e.g. STUD0414"}
                 placeholderTextColor="#94a3b8"
                 style={styles.portalInput}
@@ -845,13 +832,11 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
 
             <Text style={styles.portalLabel}>{mode === "teacher" ? "PASSWORD" : "PASSWORD / DEFAULT DOB"}</Text>
             <View style={styles.portalInputShell}>
-              <View style={styles.portalInputIcon}>
-                <Feather name="lock" size={18} color="#047857" />
-              </View>
+              <Feather name="lock" size={17} color="#64748b" style={styles.portalInputLeadingIcon} />
               <TextInput
                 onChangeText={setPassword}
-                onFocus={() => handleInputFocus(180)}
-                placeholder={mode === "student" ? "e.g. Tanfeez2010 or Tanf2010 or DOB" : "Password"}
+                onFocus={() => handleInputFocus(160)}
+                placeholder={mode === "student" ? "e.g. Tanf2010 or DOB" : "Enter password"}
                 placeholderTextColor="#94a3b8"
                 secureTextEntry={!showPassword}
                 style={styles.portalInput}
@@ -860,20 +845,26 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
               <Pressable
                 onPress={() => setShowPassword((current) => !current)}
                 style={styles.portalEyeButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 accessibilityLabel={showPassword ? "Hide password" : "Show password"}
                 accessibilityRole="button"
               >
-                <Feather name={showPassword ? "eye" : "eye-off"} size={20} color="#475569" />
+                <Feather name={showPassword ? "eye" : "eye-off"} size={18} color="#64748b" />
               </Pressable>
             </View>
 
             {mode === "student" ? (
               <Text style={styles.portalHelperText}>
-                First login me default password: Name ke starting letters + Birth Year (e.g. Tanfeez2010 ya Tanf2010) ya Date of Birth. Login ke baad naya password set kar sakte hain.
+                Default password: Name starting letters + Birth Year (e.g. Tanf2010) or Date of Birth.
               </Text>
             ) : null}
-            {error ? <Text style={styles.portalErrorText}>{error}</Text> : null}
+
+            {error ? (
+              <View style={styles.portalErrorBox}>
+                <Feather name="alert-circle" size={15} color="#b91c1c" />
+                <Text style={styles.portalErrorText}>{error}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.portalOptionsRow}>
               <Pressable
@@ -882,11 +873,11 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
                 hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
               >
                 <View style={[styles.portalCheckBox, rememberPassword && styles.portalCheckBoxActive]}>
-                  {rememberPassword ? <Feather name="check" size={12} color="#fff" /> : null}
+                  {rememberPassword ? <Feather name="check" size={11} color="#fff" /> : null}
                 </View>
-                <Text style={styles.portalRememberText}>Save password</Text>
+                <Text style={styles.portalRememberText}>Remember me</Text>
               </Pressable>
-              <Pressable onPress={() => Alert.alert("Forgot Password", "Please contact the school office.")}>
+              <Pressable onPress={() => Alert.alert("Password Assistance", "Please contact the school office to reset your password:\n\nPhone: +91 9006457330\nEmail: a9006457330@gmail.com")}>
                 <Text style={styles.portalForgotText}>Forgot Password?</Text>
               </Pressable>
             </View>
@@ -897,26 +888,39 @@ function LoginScreen({ onLogin, onOpenPrivacy, onOpenTerms, onOpenContact }) {
                 style={[styles.portalConsentBox, agreed && styles.portalConsentBoxActive]}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                {agreed ? <Feather name="check" size={13} color="#fff" /> : null}
+                {agreed ? <Feather name="check" size={11} color="#fff" /> : null}
               </Pressable>
               <Text style={styles.portalConsentText}>
                 I agree to the{" "}
                 <Text onPress={onOpenPrivacy} style={styles.portalConsentLink}>Privacy Policy</Text>
-                {" and "}
-                <Text onPress={onOpenTerms} style={styles.portalConsentLink}>Terms & Conditions</Text>.
+                {" & "}
+                <Text onPress={onOpenTerms} style={styles.portalConsentLink}>Terms</Text>.
               </Text>
             </View>
 
-            <Pressable disabled={loading || !agreed} onPress={submit} style={[styles.portalLoginButton, (loading || !agreed) && styles.disabledButton]}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.portalLoginText}>Login</Text>}
+            <Pressable
+              disabled={loading || !agreed}
+              onPress={submit}
+              style={[styles.portalLoginButton, (loading || !agreed) && styles.disabledButton]}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.portalLoginText}>
+                  Sign In as {mode === "teacher" ? "Teacher" : "Student"}
+                </Text>
+              )}
             </Pressable>
           </View>
 
+          {/* Footer Branding */}
           <View style={styles.portalFooter}>
             <Text style={styles.portalFooterText}>
-              “Education is the most powerful weapon which you can use to change the world.”
+              Star Public School • Harinagar, West Champaran
             </Text>
-            <Text style={styles.portalFooterAuthor}>— Nelson Mandela</Text>
+            <Text style={styles.portalFooterAuthor}>
+              Need assistance? Call: +91 9006457330
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -1125,7 +1129,7 @@ function StudentProfilePage({ student, onBack, onLogout, onOpenPrivacy, onOpenTe
       {/* Top Navigation */}
       <View style={styles.profilePageTopRow}>
         <Pressable onPress={onBack} style={styles.profileBackButton}>
-          <Feather name="arrow-left" size={14} color="#047857" />
+          <Feather name="arrow-left" size={14} color="#2563eb" />
           <Text style={styles.profileBackButtonText}>Dashboard</Text>
         </Pressable>
         <Text style={styles.profilePageKicker}>Official Digital ID</Text>
@@ -1194,7 +1198,7 @@ function StudentProfilePage({ student, onBack, onLogout, onOpenPrivacy, onOpenTe
           <View key={section.title} style={styles.profileSectionCard}>
             <View style={styles.profileSectionHeaderRow}>
               <View style={styles.profileSectionIconWrap}>
-                <Feather name={section.icon} size={14} color="#047857" />
+                <Feather name={section.icon} size={14} color="#2563eb" />
               </View>
               <Text style={styles.profileSectionTitle}>{section.title}</Text>
             </View>
@@ -1216,8 +1220,8 @@ function StudentProfilePage({ student, onBack, onLogout, onOpenPrivacy, onOpenTe
         <Text style={styles.profileMenuTitle}>School Support & Policies</Text>
         <View style={styles.profileMenuList}>
           <Pressable onPress={onOpenContact} style={styles.profileMenuItem}>
-            <View style={[styles.profileMenuIconWrap, { backgroundColor: "#ecfdf5" }]}>
-              <Feather name="phone" size={16} color="#047857" />
+            <View style={[styles.profileMenuIconWrap, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="phone" size={16} color="#2563eb" />
             </View>
             <View style={styles.profileMenuTextWrap}>
               <Text style={styles.profileMenuLabel}>Contact School Office</Text>
@@ -1401,17 +1405,17 @@ function Dashboard({ session, onLogout, onOpenPrivacy, onOpenTerms, onOpenContac
             <Text style={styles.headerSchool}>{SCHOOL_NAME}</Text>
             <Text numberOfLines={1} style={styles.headerTitle}>
               {session.role === "teacher"
-                ? session.user?.email || session.user?.name || `${SCHOOL_SHORT_NAME} Mobile`
+                ? session.user?.name || session.user?.fullName || session.user?.email || `${SCHOOL_SHORT_NAME} Mobile`
                 : session.user?.name || session.user?.email || `${SCHOOL_SHORT_NAME} Mobile`}
             </Text>
             {session.role === "teacher" ? (
               <View style={styles.teacherHeaderBadge}>
-                <Feather name="award" size={9} color="#047857" />
+                <Feather name="award" size={9} color="#2563eb" />
                 <Text style={styles.teacherHeaderBadgeText}>Faculty Portal</Text>
               </View>
             ) : (
               <View style={styles.studentHeaderBadge}>
-                <Feather name="shield" size={9} color="#047857" />
+                <Feather name="shield" size={9} color="#2563eb" />
                 <Text style={styles.studentHeaderBadgeText}>Student</Text>
               </View>
             )}
@@ -1486,7 +1490,7 @@ function Dashboard({ session, onLogout, onOpenPrivacy, onOpenTerms, onOpenContac
                       <Ionicons
                         name={getSectionVectorIcon(section.key, isActive)}
                         size={21}
-                        color={isActive ? "#047857" : "#64748b"}
+                        color={isActive ? "#2563eb" : "#64748b"}
                       />
                     </View>
                     <Text
@@ -1605,7 +1609,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
           setRecords([]);
           setStatuses({});
           setSelectedDateIsHoliday(false);
-          setMessage(currentBoot?.message || "Aapko abhi class/section assign nahi hua hai.");
+          setMessage(currentBoot?.message || "No class or section is assigned to your profile yet. Please contact the school office.");
         }
       } catch (err) {
         setError(err.message || "Teacher data load failed");
@@ -1625,12 +1629,12 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
   const saveClassAttendance = async () => {
     if (!selectedAssignment) return;
     if (selectedDateIsHoliday) {
-      setMessage("Holiday hai. Is date ka attendance record save nahi hoga.");
+      setMessage("Today is marked as a school holiday. Attendance cannot be recorded for holidays.");
       return;
     }
     const missing = students.filter((student) => !statuses[student.id]);
     if (missing.length) {
-      Alert.alert("Attendance missing", "All studenska status select karein.");
+      Alert.alert("Attendance missing", "Please select an attendance status (Present, Absent, or Late) for each student.");
       return;
     }
 
@@ -1669,7 +1673,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
     >
-      <SectionTabsBar tabs={sectionTabs} activeTab={activeTab} onTabChange={onTabChange} />
+      {sectionTabs && sectionTabs.length > 1 ? (<SectionTabsBar tabs={sectionTabs} activeTab={activeTab} onTabChange={onTabChange} />) : null}
       {error ? <Notice tone="error" text={error} /> : null}
       {message ? <Notice tone={saved ? "success" : "info"} text={message} /> : null}
 
@@ -1716,7 +1720,7 @@ function TeacherArea({ activeTab, onTabChange, sectionTabs, session }) {
       ) : null}
 
       {activeTab === "reports" ? (
-        <ReportsPanel assignment={selectedAssignment} session={session} students={students} />
+        <ReportsPanel assignment={selectedAssignment} session={session} students={students} onOpen={onTabChange} />
       ) : null}
 
       {activeTab === "history" ? (
@@ -1882,287 +1886,176 @@ function SectionTabsBar({ tabs, activeTab, onTabChange }) {
 
 function TeacherHome({ assignment, onOpen, records, students, session }) {
   const summary = summarizeRecords(records);
-  const academicYear = assignment?.academic_year || getDefaultAcademicYear();
-  const classLabel = assignment ? `Class ${assignment.class} - ${assignment.section}` : "Assigned Class";
-  const teacherName = session?.user?.name || session?.user?.email?.split("@")[0] || "Faculty Educator";
+  const classLabel = assignment ? `Class ${assignment.class} - ${assignment.section}` : "General Faculty";
+  const teacherName = session?.user?.name || session?.user?.fullName || session?.user?.email?.split("@")[0] || "Faculty Member";
 
   const totalStudents = students?.length || 0;
   const presentCount = summary?.present || 0;
   const absentCount = summary?.absent || 0;
   const lateCount = summary?.late || 0;
-  const attendanceRate = totalStudents > 0 ? Math.round((presentCount / totalStudents) * 100) : 0;
+
+  const todayDateString = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
 
   return (
     <View style={styles.teacherHomeShell}>
-      {/* 1. TEACHER WORKSPACE HERO CARD */}
-      <View style={styles.teacherHeroCard}>
-        <View style={styles.teacherHeroCardTop}>
-          <View style={styles.teacherHeroBrandWrap}>
-            <View style={styles.teacherHeroLogoWrap}>
-              <Image source={schoolLogo} style={styles.teacherHeroLogo} resizeMode="contain" />
-            </View>
-            <View style={styles.teacherHeroSchoolText}>
-              <Text style={styles.teacherHeroSchoolName}>{SCHOOL_NAME}</Text>
-              <Text style={styles.teacherHeroPortalLabel}>TEACHER WORKSPACE &amp; FACULTY PORTAL</Text>
-            </View>
+      {/* 1. TEACHER WELCOME CARD (Clean White with Royal Blue accent border) */}
+      <View style={styles.teacherProfileBanner}>
+        <View style={styles.teacherProfileBannerTop}>
+          <View style={styles.teacherAvatarCircle}>
+            <Text style={styles.teacherAvatarInitials}>{getInitials(teacherName)}</Text>
+          </View>
+          <View style={styles.teacherProfileMeta}>
+            <Text style={styles.teacherGreetingSmall}>Welcome back,</Text>
+            <Text numberOfLines={1} style={styles.teacherProfileName}>{teacherName}</Text>
+            <Text style={styles.teacherDateSubtitle}>{todayDateString}</Text>
           </View>
           <View style={styles.teacherVerifiedBadge}>
-            <Feather name="award" size={10} color="#10b981" />
-            <Text style={styles.teacherVerifiedBadgeText}>Faculty Active</Text>
+            <Feather name="check-circle" size={12} color="#2563eb" />
+            <Text style={styles.teacherVerifiedBadgeText}>Active</Text>
           </View>
         </View>
 
-        <View style={styles.teacherHeroIdentityRow}>
-          <View style={styles.teacherHeroAvatarBorder}>
-            <View style={styles.teacherHeroAvatarInner}>
-              <Text style={styles.teacherHeroAvatarText}>{getInitials(teacherName)}</Text>
-            </View>
-            <View style={styles.teacherHeroStarBadge}>
-              <Feather name="check" size={10} color="#064e3b" />
-            </View>
+        <View style={styles.teacherProfileTagsRow}>
+          <View style={styles.teacherClassTag}>
+            <Feather name="book-open" size={12} color="#1d4ed8" />
+            <Text style={styles.teacherClassTagText}>{classLabel}</Text>
           </View>
+          <View style={styles.teacherStudentsTag}>
+            <Feather name="users" size={12} color="#1d4ed8" />
+            <Text style={styles.teacherStudentsTagText}>{totalStudents} Enrolled Students</Text>
+          </View>
+        </View>
+      </View>
 
-          <View style={styles.teacherHeroBio}>
-            <Text style={styles.teacherHeroGreeting}>Welcome back,</Text>
-            <Text numberOfLines={1} style={styles.teacherHeroTeacherName}>
-              {teacherName}
-            </Text>
-            <View style={styles.teacherHeroPillsContainer}>
-              <View style={styles.teacherHeroPill}>
-                <Feather name="book-open" size={10} color="#a7f3d0" />
-                <Text style={styles.teacherHeroPillText}>{classLabel}</Text>
-              </View>
-              <View style={styles.teacherHeroPill}>
-                <Feather name="users" size={10} color="#a7f3d0" />
-                <Text style={styles.teacherHeroPillText}>{totalStudents} Students</Text>
-              </View>
-            </View>
+      {/* 2. PRIMARY ACTION 1: MY DAILY ATTENDANCE (GPS PUNCH) */}
+      <View style={styles.actionCardModern}>
+        <View style={styles.actionCardHeader}>
+          <View style={[styles.actionIconBubble, { backgroundColor: "#eff6ff" }]}>
+            <Feather name="map-pin" size={22} color="#2563eb" />
+          </View>
+          <View style={styles.actionHeaderText}>
+            <Text style={styles.actionCardTitle}>My Daily Attendance</Text>
+            <Text style={styles.actionCardSubtitle}>Punch arrival and departure on school campus</Text>
+          </View>
+        </View>
+
+        <Pressable
+          onPress={() => onOpen?.("gpsAttendance")}
+          style={({ pressed }) => [styles.primaryBlueButton, pressed && styles.cardPressed]}
+        >
+          <Feather name="navigation" size={16} color="#ffffff" />
+          <Text style={styles.primaryBlueButtonText}>Mark Punch Attendance</Text>
+          <Feather name="arrow-right" size={16} color="#ffffff" />
+        </Pressable>
+      </View>
+
+      {/* 3. PRIMARY ACTION 2: STUDENT CLASS ATTENDANCE */}
+      <View style={styles.actionCardModern}>
+        <View style={styles.actionCardHeader}>
+          <View style={[styles.actionIconBubble, { backgroundColor: "#eff6ff" }]}>
+            <Feather name="check-square" size={22} color="#2563eb" />
+          </View>
+          <View style={styles.actionHeaderText}>
+            <Text style={styles.actionCardTitle}>Take Class Attendance</Text>
+            <Text style={styles.actionCardSubtitle}>{classLabel} • Daily student presence register</Text>
+          </View>
+        </View>
+
+        {/* Counter Badges */}
+        <View style={styles.attendanceCounterRow}>
+          <View style={[styles.attendanceCounterPill, { backgroundColor: "#f0fdf4", borderColor: "#bbf7d0" }]}>
+            <Text style={[styles.attendanceCounterNum, { color: "#16a34a" }]}>{presentCount}</Text>
+            <Text style={styles.attendanceCounterLabel}>Present</Text>
+          </View>
+          <View style={[styles.attendanceCounterPill, { backgroundColor: "#fef2f2", borderColor: "#fecaca" }]}>
+            <Text style={[styles.attendanceCounterNum, { color: "#dc2626" }]}>{absentCount}</Text>
+            <Text style={styles.attendanceCounterLabel}>Absent</Text>
+          </View>
+          <View style={[styles.attendanceCounterPill, { backgroundColor: "#eff6ff", borderColor: "#bfdbfe" }]}>
+            <Text style={[styles.attendanceCounterNum, { color: "#2563eb" }]}>{totalStudents}</Text>
+            <Text style={styles.attendanceCounterLabel}>Total</Text>
           </View>
         </View>
 
         <Pressable
           onPress={() => onOpen?.("attendance")}
-          style={styles.teacherHeroCardFooter}
+          style={({ pressed }) => [styles.primarySapphireButton, pressed && styles.cardPressed]}
         >
-          <View style={styles.teacherHeroFooterLeft}>
-            <Feather name="calendar" size={13} color="#a7f3d0" />
-            <Text style={styles.teacherHeroFooterText}>
-              Academic Year {academicYear} • {classLabel}
-            </Text>
-          </View>
-          <View style={styles.teacherHeroFooterRight}>
-            <Text style={styles.teacherHeroFooterLink}>Take Attendance</Text>
-            <Feather name="arrow-right" size={12} color="#ffd15c" />
-          </View>
+          <Feather name="check-circle" size={16} color="#ffffff" />
+          <Text style={styles.primaryBlueButtonText}>Open Student Register</Text>
+          <Feather name="arrow-right" size={16} color="#ffffff" />
         </Pressable>
       </View>
 
-      {/* 2. TODAY'S CLASS ATTENDANCE METRICS */}
-      <View style={styles.teacherAttendanceCard}>
-        <View style={styles.teacherCardHeaderRow}>
-          <View style={styles.teacherCardHeaderIcon}>
-            <Feather name="check-square" size={16} color="#047857" />
-          </View>
-          <View style={styles.teacherCardHeaderTitles}>
-            <Text style={styles.teacherCardSectionTitle}>Today's Class Attendance</Text>
-            <Text style={styles.teacherCardSectionMeta}>
-              {totalStudents > 0 ? `${presentCount} of ${totalStudents} students present today` : "No student records"}
-            </Text>
-          </View>
-          <Pressable onPress={() => onOpen?.("attendance")} style={styles.teacherCardHeaderLink}>
-            <Text style={styles.teacherCardHeaderLinkText}>Mark</Text>
-            <Feather name="chevron-right" size={12} color="#047857" />
-          </Pressable>
-        </View>
+      {/* 4. CLASSROOM TEACHING TOOLS (2x2 Grid) */}
+      <View style={styles.modernSection}>
+        <Text style={styles.modernSectionTitle}>Daily Teaching Tools</Text>
+        <Text style={styles.modernSectionSubtitle}>Essential tools for classroom management</Text>
 
-        <View style={styles.teacherAttendanceMeterBlock}>
-          <View style={styles.teacherAttendanceScoreRow}>
-            <View style={styles.teacherAttendancePercentWrap}>
-              <Text style={styles.teacherAttendancePercentText}>{attendanceRate}%</Text>
-              <Text style={styles.teacherAttendancePercentLabel}>Today's Presence Rate</Text>
-            </View>
-            <View style={styles.teacherAttendanceStatusPill}>
-              <Text style={styles.teacherAttendanceStatusText}>
-                {presentCount} / {totalStudents} Present
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.teacherProgressBarTrack}>
-            <View
-              style={[
-                styles.teacherProgressBarFill,
-                { width: `${Math.min(100, Math.max(4, attendanceRate))}%` },
-              ]}
-            />
-          </View>
-        </View>
-
-        {/* 4 Stat Badges */}
-        <View style={styles.teacherMetricsGrid}>
-          <View style={[styles.teacherMetricPillCard, styles.teacherMetricStudents]}>
-            <Feather name="users" size={14} color="#0284c7" />
-            <Text style={[styles.teacherMetricNum, { color: "#0284c7" }]}>{totalStudents}</Text>
-            <Text style={styles.teacherMetricTag}>Enrolled</Text>
-          </View>
-          <View style={[styles.teacherMetricPillCard, styles.teacherMetricPresent]}>
-            <Feather name="check-circle" size={14} color="#059669" />
-            <Text style={styles.teacherMetricNum}>{presentCount}</Text>
-            <Text style={styles.teacherMetricTag}>Present</Text>
-          </View>
-          <View style={[styles.teacherMetricPillCard, styles.teacherMetricAbsent]}>
-            <Feather name="x-circle" size={14} color="#e11d48" />
-            <Text style={[styles.teacherMetricNum, { color: "#e11d48" }]}>{absentCount}</Text>
-            <Text style={styles.teacherMetricTag}>Absent</Text>
-          </View>
-          <View style={[styles.teacherMetricPillCard, styles.teacherMetricLate]}>
-            <Feather name="clock" size={14} color="#d97706" />
-            <Text style={[styles.teacherMetricNum, { color: "#d97706" }]}>{lateCount}</Text>
-            <Text style={styles.teacherMetricTag}>Late</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* 3. CORE TEACHER OPERATIONS (2x2 GRID) */}
-      <View style={styles.teacherServicesSection}>
-        <View style={styles.teacherSectionTitleWrap}>
-          <Text style={styles.teacherSectionTitle}>Core Operations</Text>
-          <Text style={styles.teacherSectionMeta}>Essential daily classroom tools</Text>
-        </View>
-
-        <View style={styles.teacherServicesGrid}>
-          {/* Card 1: GPS Punch In/Out */}
+        <View style={styles.toolsGrid2x2}>
+          {/* Card 1: My Students */}
           <Pressable
-            onPress={() => onOpen?.("gpsAttendance")}
-            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
+            onPress={() => onOpen?.("students")}
+            style={({ pressed }) => [styles.modernToolCard, pressed && styles.cardPressed]}
           >
-            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#ecfdf5" }]}>
-              <Feather name="map-pin" size={20} color="#047857" />
+            <View style={[styles.toolIconBox, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="users" size={20} color="#2563eb" />
             </View>
-            <View style={styles.teacherServiceBody}>
-              <Text style={styles.teacherServiceTitle}>GPS Punch</Text>
-              <Text style={styles.teacherServiceSubtitle}>Check In, Out &amp; Leaves</Text>
-            </View>
-            <View style={styles.teacherServiceArrowWrap}>
-              <Feather name="arrow-up-right" size={14} color="#047857" />
-            </View>
+            <Text style={styles.toolTitle}>My Students</Text>
+            <Text style={styles.toolDescription}>Roll numbers, names & parent phone</Text>
           </Pressable>
 
-          {/* Card 2: Class Attendance */}
-          <Pressable
-            onPress={() => onOpen?.("attendance")}
-            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
-          >
-            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#f0fdf4" }]}>
-              <Feather name="check-square" size={20} color="#16a34a" />
-            </View>
-            <View style={styles.teacherServiceBody}>
-              <Text style={styles.teacherServiceTitle}>Class Attendance</Text>
-              <Text style={styles.teacherServiceSubtitle}>Mark daily student register</Text>
-            </View>
-            <View style={styles.teacherServiceArrowWrap}>
-              <Feather name="arrow-up-right" size={14} color="#16a34a" />
-            </View>
-          </Pressable>
-
-          {/* Card 3: Submit Marks */}
+          {/* Card 2: Enter Marks */}
           <Pressable
             onPress={() => onOpen?.("submitMarks")}
-            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
+            style={({ pressed }) => [styles.modernToolCard, pressed && styles.cardPressed]}
           >
-            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#eef2ff" }]}>
-              <Feather name="award" size={20} color="#4f46e5" />
+            <View style={[styles.toolIconBox, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="edit-3" size={20} color="#2563eb" />
             </View>
-            <View style={styles.teacherServiceBody}>
-              <Text style={styles.teacherServiceTitle}>Submit Marks</Text>
-              <Text style={styles.teacherServiceSubtitle}>Enter terminal exam grades</Text>
-            </View>
-            <View style={styles.teacherServiceArrowWrap}>
-              <Feather name="arrow-up-right" size={14} color="#4f46e5" />
-            </View>
+            <Text style={styles.toolTitle}>Enter Marks</Text>
+            <Text style={styles.toolDescription}>Input test and terminal exam marks</Text>
           </Pressable>
 
-          {/* Card 4: Reports */}
+          {/* Card 3: School Holidays */}
           <Pressable
-            onPress={() => onOpen?.("reports")}
-            style={({ pressed }) => [styles.teacherServiceCard, pressed && styles.cardPressed]}
+            onPress={() => onOpen?.("holidays")}
+            style={({ pressed }) => [styles.modernToolCard, pressed && styles.cardPressed]}
           >
-            <View style={[styles.teacherServiceIconWrap, { backgroundColor: "#f0fdfa" }]}>
-              <Feather name="bar-chart-2" size={20} color="#0d9488" />
+            <View style={[styles.toolIconBox, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="calendar" size={20} color="#2563eb" />
             </View>
-            <View style={styles.teacherServiceBody}>
-              <Text style={styles.teacherServiceTitle}>Class Reports</Text>
-              <Text style={styles.teacherServiceSubtitle}>Monthly analytics &amp; trends</Text>
+            <Text style={styles.toolTitle}>School Holidays</Text>
+            <Text style={styles.toolDescription}>Upcoming breaks & holiday dates</Text>
+          </Pressable>
+
+          {/* Card 4: My Attendance */}
+          <Pressable
+            onPress={() => onOpen?.("gpsHistory")}
+            style={({ pressed }) => [styles.modernToolCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.toolIconBox, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="clock" size={20} color="#2563eb" />
             </View>
-            <View style={styles.teacherServiceArrowWrap}>
-              <Feather name="arrow-up-right" size={14} color="#0d9488" />
-            </View>
+            <Text style={styles.toolTitle}>My Attendance</Text>
+            <Text style={styles.toolDescription}>Monthly punch logs & work hours</Text>
           </Pressable>
         </View>
       </View>
 
-      {/* 4. CLASSROOM MANAGEMENT TOOLS (SECONDARY LIST) */}
-      <View style={styles.teacherToolsSection}>
-        <View style={styles.teacherSectionTitleWrap}>
-          <Text style={styles.teacherSectionTitle}>Classroom Management</Text>
-          <Text style={styles.teacherSectionMeta}>Rosters, scorecards and holiday schedules</Text>
+      {/* 5. HELPLINE / SUPPORT */}
+      <View style={styles.modernHelpCard}>
+        <View style={styles.helpIconBox}>
+          <Feather name="help-circle" size={20} color="#2563eb" />
         </View>
-
-        <View style={styles.teacherToolsList}>
-          <Pressable onPress={() => onOpen?.("students")} style={styles.teacherToolItem}>
-            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#eff6ff" }]}>
-              <Feather name="users" size={16} color="#2563eb" />
-            </View>
-            <View style={styles.teacherToolTextWrap}>
-              <Text style={styles.teacherToolLabel}>Enrolled Students Roster</Text>
-              <Text style={styles.teacherToolSub}>View {totalStudents} students with roll and fee status</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="#94a3b8" />
-          </Pressable>
-
-          <Pressable onPress={() => onOpen?.("viewMarks")} style={styles.teacherToolItem}>
-            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#fdf4ff" }]}>
-              <Feather name="file-text" size={16} color="#c026d3" />
-            </View>
-            <View style={styles.teacherToolTextWrap}>
-              <Text style={styles.teacherToolLabel}>View Submitted Marks</Text>
-              <Text style={styles.teacherToolSub}>Review submitted subject and terminal scorecards</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="#94a3b8" />
-          </Pressable>
-
-          <Pressable onPress={() => onOpen?.("history")} style={styles.teacherToolItem}>
-            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#fefce8" }]}>
-              <Feather name="clock" size={16} color="#ca8a04" />
-            </View>
-            <View style={styles.teacherToolTextWrap}>
-              <Text style={styles.teacherToolLabel}>Student Attendance History</Text>
-              <Text style={styles.teacherToolSub}>Individual daily student attendance logs</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="#94a3b8" />
-          </Pressable>
-
-          <Pressable onPress={() => onOpen?.("gpsHistory")} style={styles.teacherToolItem}>
-            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#ecfdf5" }]}>
-              <Feather name="navigation" size={16} color="#059669" />
-            </View>
-            <View style={styles.teacherToolTextWrap}>
-              <Text style={styles.teacherToolLabel}>My Personal GPS History</Text>
-              <Text style={styles.teacherToolSub}>Monthly check-in, check-out and work hours</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="#94a3b8" />
-          </Pressable>
-
-          <Pressable onPress={() => onOpen?.("holidays")} style={styles.teacherToolItem}>
-            <View style={[styles.teacherToolIconWrap, { backgroundColor: "#fff7ed" }]}>
-              <Feather name="sun" size={16} color="#ea580c" />
-            </View>
-            <View style={styles.teacherToolTextWrap}>
-              <Text style={styles.teacherToolLabel}>School Holiday Calendar</Text>
-              <Text style={styles.teacherToolSub}>Official academic holidays and breaks</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="#94a3b8" />
-          </Pressable>
+        <View style={styles.helpTextBox}>
+          <Text style={styles.helpTitle}>Star Public School Helpline</Text>
+          <Text style={styles.helpSub}>Need assistance? Office phone: +91 9006457330</Text>
         </View>
       </View>
     </View>
@@ -2217,7 +2110,7 @@ function StudentHome({ session, student, summary, onTabChange }) {
               resizeMode="cover"
             />
             <View style={styles.studentHeroStarBadge}>
-              <Feather name="star" size={10} color="#064e3b" />
+              <Feather name="star" size={10} color="#1e3a8a" />
             </View>
           </View>
 
@@ -2228,7 +2121,7 @@ function StudentHome({ session, student, summary, onTabChange }) {
             </Text>
             <View style={styles.studentHeroPillsContainer}>
               <View style={styles.studentHeroPill}>
-                <Feather name="book-open" size={10} color="#a7f3d0" />
+                <Feather name="book-open" size={10} color="#bfdbfe" />
                 <Text style={styles.studentHeroPillText}>{classLabel}</Text>
               </View>
               <View style={styles.studentHeroPill}>
@@ -2243,7 +2136,7 @@ function StudentHome({ session, student, summary, onTabChange }) {
           style={styles.studentHeroCardFooter}
         >
           <View style={styles.studentHeroFooterLeft}>
-            <Feather name="credit-card" size={13} color="#a7f3d0" />
+            <Feather name="credit-card" size={13} color="#bfdbfe" />
             <Text style={styles.studentHeroFooterText}>
               ID: {studentIdLabel} • Session {academicYear}
             </Text>
@@ -2259,7 +2152,7 @@ function StudentHome({ session, student, summary, onTabChange }) {
       <View style={styles.studentAttendanceCard}>
         <View style={styles.studentCardHeaderRow}>
           <View style={styles.studentCardHeaderIcon}>
-            <Feather name="calendar" size={16} color="#047857" />
+            <Feather name="calendar" size={16} color="#2563eb" />
           </View>
           <View style={styles.studentCardHeaderTitles}>
             <Text style={styles.studentCardSectionTitle}>Attendance Overview</Text>
@@ -2267,7 +2160,7 @@ function StudentHome({ session, student, summary, onTabChange }) {
           </View>
           <Pressable onPress={() => onTabChange?.("attendance")} style={styles.studentCardHeaderLink}>
             <Text style={styles.studentCardHeaderLinkText}>Details</Text>
-            <Feather name="chevron-right" size={12} color="#047857" />
+            <Feather name="chevron-right" size={12} color="#2563eb" />
           </Pressable>
         </View>
 
@@ -2334,15 +2227,15 @@ function StudentHome({ session, student, summary, onTabChange }) {
             onPress={() => onTabChange?.("fees")}
             style={({ pressed }) => [styles.studentServiceCard, pressed && styles.cardPressed]}
           >
-            <View style={[styles.studentServiceIconWrap, { backgroundColor: "#ecfdf5" }]}>
-              <Feather name="credit-card" size={20} color="#047857" />
+            <View style={[styles.studentServiceIconWrap, { backgroundColor: "#eff6ff" }]}>
+              <Feather name="credit-card" size={20} color="#2563eb" />
             </View>
             <View style={styles.studentServiceBody}>
               <Text style={styles.studentServiceTitle}>Fee Portal</Text>
               <Text style={styles.studentServiceSubtitle}>Dues, Online Pay & Receipts</Text>
             </View>
             <View style={styles.studentServiceArrowWrap}>
-              <Feather name="arrow-up-right" size={14} color="#047857" />
+              <Feather name="arrow-up-right" size={14} color="#2563eb" />
             </View>
           </Pressable>
 
@@ -2411,7 +2304,7 @@ function StudentHome({ session, student, summary, onTabChange }) {
       {/* 5. CAMPUS HELPDESK INFO BANNER */}
       <View style={styles.studentHelpdeskCard}>
         <View style={styles.studentHelpdeskTop}>
-          <Feather name="help-circle" size={16} color="#047857" />
+          <Feather name="help-circle" size={16} color="#2563eb" />
           <Text style={styles.studentHelpdeskTitle}>School Helpdesk & Support</Text>
         </View>
         <Text style={styles.studentHelpdeskBody}>
@@ -2422,14 +2315,14 @@ function StudentHome({ session, student, summary, onTabChange }) {
             onPress={() => Linking.openURL(`tel:${SCHOOL_PHONE}`).catch(() => {})}
             style={styles.studentHelpdeskBtn}
           >
-            <Feather name="phone" size={12} color="#047857" />
+            <Feather name="phone" size={12} color="#2563eb" />
             <Text style={styles.studentHelpdeskBtnText}>{SCHOOL_PHONE}</Text>
           </Pressable>
           <Pressable
             onPress={() => Linking.openURL(`mailto:${SCHOOL_EMAIL}`).catch(() => {})}
             style={styles.studentHelpdeskBtn}
           >
-            <Feather name="mail" size={12} color="#047857" />
+            <Feather name="mail" size={12} color="#2563eb" />
             <Text style={styles.studentHelpdeskBtnText}>Email Office</Text>
           </Pressable>
         </View>
@@ -2439,31 +2332,93 @@ function StudentHome({ session, student, summary, onTabChange }) {
 }
 
 function StudentList({ students }) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return students;
+    const q = search.toLowerCase();
+    return students.filter(
+      (s) =>
+        String(s.name || "").toLowerCase().includes(q) ||
+        String(s.rollNo || s.roll_no || "").toLowerCase().includes(q) ||
+        String(s.mobile || "").includes(q) ||
+        String(s.admissionNumber || s.admission_number || "").toLowerCase().includes(q)
+    );
+  }, [students, search]);
+
   if (!students.length) {
-    return <EmptyState title="No students found" text="Assigned class me active students nahi mile." />;
+    return <EmptyState title="No students found" text="No active students found in your assigned class." />;
   }
 
   return (
-    <View style={styles.list}>
-      {students.map((student) => (
-        <View key={student.id} style={styles.rowCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{getInitials(student.name)}</Text>
-          </View>
-          <View style={styles.rowBody}>
-            <Text style={styles.rowTitle}>{student.name || "Student"}</Text>
-            <Text style={styles.rowMeta}>
-              Roll {student.rollNo || "-"} | {student.class} {student.section}
-            </Text>
-            {student.mobile ? <Text style={styles.rowSub}>Mobile {student.mobile}</Text> : null}
-          </View>
-          <View style={student.feeStatus === "paid" ? styles.paidPill : styles.duePill}>
-            <Text style={student.feeStatus === "paid" ? styles.paidText : styles.dueText}>
-              {student.feeStatus === "paid" ? "Paid" : `Due Rs ${student.previousDue}`}
-            </Text>
-          </View>
+    <View style={styles.studentListShell}>
+      {/* Search Header Bar */}
+      <View style={styles.studentSearchCard}>
+        <View style={styles.studentSearchRow}>
+          <Feather name="search" size={16} color="#2563eb" />
+          <TextInput
+            placeholder="Search student by name, roll no, phone..."
+            placeholderTextColor="#94a3b8"
+            style={styles.studentSearchInput}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search ? (
+            <Pressable onPress={() => setSearch("")} hitSlop={8}>
+              <Feather name="x-circle" size={16} color="#94a3b8" />
+            </Pressable>
+          ) : null}
         </View>
-      ))}
+        <View style={styles.studentSearchMetaRow}>
+          <Text style={styles.studentSearchCountText}>
+            Showing {filtered.length} of {students.length} Students
+          </Text>
+        </View>
+      </View>
+
+      {/* Student List Cards */}
+      <View style={styles.list}>
+        {filtered.map((student) => (
+          <View key={student.id} style={styles.studentDirectoryCard}>
+            <View style={styles.studentDirTopRow}>
+              <View style={styles.studentDirAvatar}>
+                <Text style={styles.studentDirAvatarText}>{getInitials(student.name)}</Text>
+              </View>
+              <View style={styles.studentDirMeta}>
+                <Text numberOfLines={1} style={styles.studentDirName}>{student.name || "Student"}</Text>
+                <Text style={styles.studentDirRoll}>
+                  Roll #{student.rollNo || student.roll_no || "-"} • {student.class || ""} {student.section ? `- ${student.section}` : ""}
+                </Text>
+                {student.admissionNumber || student.admission_number ? (
+                  <Text style={styles.studentDirAdm}>Adm: {student.admissionNumber || student.admission_number}</Text>
+                ) : null}
+              </View>
+              <View style={student.feeStatus === "paid" ? styles.paidPill : styles.duePill}>
+                <Text style={student.feeStatus === "paid" ? styles.paidText : styles.dueText}>
+                  {student.feeStatus === "paid" ? "Fees Paid" : `Due ₹${student.previousDue || 0}`}
+                </Text>
+              </View>
+            </View>
+
+            {/* Quick Actions (Call Parent) */}
+            {student.mobile ? (
+              <View style={styles.studentDirActionRow}>
+                <Pressable
+                  onPress={() => Linking.openURL(`tel:${student.mobile}`)}
+                  style={styles.studentDirCallBtn}
+                >
+                  <Feather name="phone-call" size={13} color="#16a34a" />
+                  <Text style={styles.studentDirCallText}>Call Parent ({student.mobile})</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        ))}
+
+        {!filtered.length && search ? (
+          <EmptyState title="No match found" text={`No students matched "${search}". Try searching by roll number or name.`} />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -2479,100 +2434,202 @@ function AttendanceMarker({
   statuses,
   students,
 }) {
+  const total = students.length;
+  const presentCount = students.filter((s) => statuses[s.id] === "present").length;
+  const absentCount = students.filter((s) => statuses[s.id] === "absent").length;
+  const lateCount = students.filter((s) => statuses[s.id] === "late").length;
+  const unmarkedCount = total - presentCount - absentCount - lateCount;
+
   return (
-    <View>
-      <View style={styles.inlineField}>
-        <Text style={styles.inputLabel}>Date</Text>
-        <TextInput
-          editable={false}
-          selectTextOnFocus={false}
-          style={[styles.input, styles.readOnlyInput]}
-          value={formatDisplayDate(date)}
-        />
+    <View style={styles.attendanceMarkerShell}>
+      {/* 1. CALENDAR DATE & CLASS HEADER CARD */}
+      <View style={styles.attHeaderCard}>
+        <View style={styles.attHeaderLeft}>
+          <View style={styles.attCalendarIconBox}>
+            <Feather name="calendar" size={20} color="#2563eb" />
+          </View>
+          <View style={styles.attHeaderTextCol}>
+            <Text style={styles.attHeaderEyebrow}>DAILY CLASS REGISTER</Text>
+            <Text style={styles.attHeaderDateTitle}>{formatDisplayDate(date)}</Text>
+          </View>
+        </View>
+        <View style={styles.attCountBadge}>
+          <Feather name="users" size={12} color="#1d4ed8" />
+          <Text style={styles.attCountBadgeText}>{total} Students</Text>
+        </View>
       </View>
 
       {isHoliday ? (
-        <Notice tone="info" text="Holiday hai. Is date ka attendance record save nahi hoga." />
+        <Notice tone="info" text="Today is marked as a school holiday. Attendance cannot be recorded for holidays." />
       ) : null}
 
-      {students.length && !isHoliday ? (
-        <View style={styles.attendanceBulkRow}>
-          <Text style={styles.attendanceBulkLabel}>Quick Fill All:</Text>
-          <View style={styles.attendanceBulkButtons}>
+      {/* 2. REALTIME ATTENDANCE TALLY COUNTERS */}
+      {total && !isHoliday ? (
+        <View style={styles.attTallyRow}>
+          <View style={[styles.attTallyPill, { backgroundColor: "#f0fdf4", borderColor: "#bbf7d0" }]}>
+            <Text style={[styles.attTallyNum, { color: "#16a34a" }]}>{presentCount}</Text>
+            <Text style={styles.attTallyLabel}>Present</Text>
+          </View>
+          <View style={[styles.attTallyPill, { backgroundColor: "#fef2f2", borderColor: "#fecaca" }]}>
+            <Text style={[styles.attTallyNum, { color: "#dc2626" }]}>{absentCount}</Text>
+            <Text style={styles.attTallyLabel}>Absent</Text>
+          </View>
+          <View style={[styles.attTallyPill, { backgroundColor: "#fffbeb", borderColor: "#fde68a" }]}>
+            <Text style={[styles.attTallyNum, { color: "#d97706" }]}>{lateCount}</Text>
+            <Text style={styles.attTallyLabel}>Late</Text>
+          </View>
+          {unmarkedCount > 0 ? (
+            <View style={[styles.attTallyPill, { backgroundColor: "#f8fafc", borderColor: "#e2e8f0" }]}>
+              <Text style={[styles.attTallyNum, { color: "#64748b" }]}>{unmarkedCount}</Text>
+              <Text style={styles.attTallyLabel}>Unmarked</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* 3. QUICK FILL ALL ACTION BAR */}
+      {total && !isHoliday ? (
+        <View style={styles.attQuickFillCard}>
+          <Text style={styles.attQuickFillTitle}>Quick Fill All:</Text>
+          <View style={styles.attQuickFillButtons}>
             <Pressable
               disabled={disabled || saving}
               onPress={() => students.forEach((s) => onStatusChange(s.id, "present"))}
-              style={[styles.attendanceBulkBtn, styles.attendanceBulkPresent]}
+              style={[styles.attQuickBtn, styles.attQuickBtnPresent]}
             >
-              <Feather name="check-circle" size={12} color="#047857" />
-              <Text style={styles.attendanceBulkBtnTextPresent}>All Present</Text>
+              <Feather name="check-circle" size={13} color="#16a34a" />
+              <Text style={styles.attQuickBtnTextPresent}>All Present</Text>
             </Pressable>
             <Pressable
               disabled={disabled || saving}
               onPress={() => students.forEach((s) => onStatusChange(s.id, "absent"))}
-              style={[styles.attendanceBulkBtn, styles.attendanceBulkAbsent]}
+              style={[styles.attQuickBtn, styles.attQuickBtnAbsent]}
             >
-              <Feather name="x-circle" size={12} color="#e11d48" />
-              <Text style={styles.attendanceBulkBtnTextAbsent}>All Absent</Text>
+              <Feather name="x-circle" size={13} color="#dc2626" />
+              <Text style={styles.attQuickBtnTextAbsent}>All Absent</Text>
+            </Pressable>
+            <Pressable
+              disabled={disabled || saving}
+              onPress={() => students.forEach((s) => onStatusChange(s.id, "late"))}
+              style={[styles.attQuickBtn, styles.attQuickBtnLate]}
+            >
+              <Feather name="clock" size={13} color="#d97706" />
+              <Text style={styles.attQuickBtnTextLate}>All Late</Text>
             </Pressable>
           </View>
         </View>
       ) : null}
 
-      {students.length ? (
-        students.map((student) => (
-          <View key={student.id} style={styles.attendanceCard}>
-            <View style={styles.attendanceHeader}>
-              <View style={styles.attendanceStudentInfo}>
-                <View style={styles.attendanceAvatar}>
-                  <Text style={styles.attendanceAvatarText}>{getInitials(student.name)}</Text>
+      {/* 4. STUDENT CARDS WITH DISTINCT COLOR STATUS BUTTONS */}
+      {total ? (
+        students.map((student) => {
+          const status = statuses[student.id];
+          return (
+            <View key={student.id} style={styles.attStudentCard}>
+              <View style={styles.attStudentHeader}>
+                <View style={styles.attStudentAvatar}>
+                  <Text style={styles.attStudentAvatarText}>{getInitials(student.name)}</Text>
                 </View>
-                <View>
-                  <Text style={styles.rowTitle}>{student.name || "Student"}</Text>
-                  <Text style={styles.rowMeta}>
-                    Roll #{student.rollNo || student.roll_no || "-"} • {student.class || ""} {student.section || ""}
+                <View style={styles.attStudentMeta}>
+                  <Text numberOfLines={1} style={styles.attStudentName}>{student.name || "Student"}</Text>
+                  <Text style={styles.attStudentRoll}>
+                    Roll #{student.rollNo || student.roll_no || "-"} • {student.class || ""} {student.section ? `- ${student.section}` : ""}
                   </Text>
                 </View>
               </View>
-            </View>
-            {isHoliday ? (
-              <View style={styles.holidayPill}>
-                <Text style={styles.holidayPillText}>No attendance on holiday</Text>
-              </View>
-            ) : (
-              <View style={styles.statusRow}>
-                {statusOptions.map((option) => (
+
+              {isHoliday ? (
+                <View style={styles.holidayPill}>
+                  <Text style={styles.holidayPillText}>No attendance on holiday</Text>
+                </View>
+              ) : (
+                <View style={styles.attStatusRow}>
+                  {/* Present Button */}
                   <Pressable
-                    key={option.key}
-                    onPress={() => onStatusChange(student.id, option.key)}
+                    disabled={disabled || saving}
+                    onPress={() => onStatusChange(student.id, "present")}
                     style={[
-                      styles.statusButton,
-                      statuses[student.id] === option.key && styles.statusButtonActive,
+                      styles.attStatusBtn,
+                      status === "present" ? styles.attBtnPresentActive : styles.attBtnPresentInactive,
                     ]}
                   >
+                    <Feather
+                      name="check-circle"
+                      size={15}
+                      color={status === "present" ? "#ffffff" : "#16a34a"}
+                    />
                     <Text
                       style={[
-                        styles.statusText,
-                        statuses[student.id] === option.key && styles.statusTextActive,
+                        styles.attStatusBtnText,
+                        status === "present" ? styles.attTextActive : { color: "#16a34a" },
                       ]}
                     >
-                      {option.label}
+                      Present
                     </Text>
                   </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
-        ))
+
+                  {/* Absent Button */}
+                  <Pressable
+                    disabled={disabled || saving}
+                    onPress={() => onStatusChange(student.id, "absent")}
+                    style={[
+                      styles.attStatusBtn,
+                      status === "absent" ? styles.attBtnAbsentActive : styles.attBtnAbsentInactive,
+                    ]}
+                  >
+                    <Feather
+                      name="x-circle"
+                      size={15}
+                      color={status === "absent" ? "#ffffff" : "#dc2626"}
+                    />
+                    <Text
+                      style={[
+                        styles.attStatusBtnText,
+                        status === "absent" ? styles.attTextActive : { color: "#dc2626" },
+                      ]}
+                    >
+                      Absent
+                    </Text>
+                  </Pressable>
+
+                  {/* Late Button */}
+                  <Pressable
+                    disabled={disabled || saving}
+                    onPress={() => onStatusChange(student.id, "late")}
+                    style={[
+                      styles.attStatusBtn,
+                      status === "late" ? styles.attBtnLateActive : styles.attBtnLateInactive,
+                    ]}
+                  >
+                    <Feather
+                      name="clock"
+                      size={15}
+                      color={status === "late" ? "#ffffff" : "#d97706"}
+                    />
+                    <Text
+                      style={[
+                        styles.attStatusBtnText,
+                        status === "late" ? styles.attTextActive : { color: "#d97706" },
+                      ]}
+                    >
+                      Late
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          );
+        })
       ) : (
-        <EmptyState title="No students" text="Attendance mark karne ke liye students load nahi hue." />
+        <EmptyState title="No students" text="No student records loaded for this class and date." />
       )}
 
+      {/* 5. BIG ATTENDANCE SAVE BUTTON */}
       <Pressable
         disabled={saving || disabled || !students.length || isHoliday}
         onPress={onSave}
         style={[
-          styles.primaryButton,
+          styles.attSaveButton,
           (saving || disabled || !students.length || isHoliday) && styles.disabledButton,
         ]}
       >
@@ -2580,9 +2637,13 @@ function AttendanceMarker({
           <ActivityIndicator color="#fff" />
         ) : (
           <View style={styles.buttonContentRow}>
-            <Feather name={isHoliday ? "slash" : disabled ? "check-circle" : "calendar"} size={18} color="#fff" />
-            <Text style={styles.primaryButtonText}>
-              {isHoliday ? "Holiday - No Attendance" : disabled ? "Attendance Saved" : "Save Attendance"}
+            <Feather
+              name={isHoliday ? "slash" : disabled ? "check-circle" : "save"}
+              size={18}
+              color="#fff"
+            />
+            <Text style={styles.attSaveButtonText}>
+              {isHoliday ? "Holiday - No Attendance" : disabled ? "Attendance Saved ✓" : `Save Attendance (${presentCount} Present)`}
             </Text>
           </View>
         )}
@@ -2599,12 +2660,12 @@ const requestLocationPermission = async () => {
 const getCurrentLocation = async () => {
   const granted = await requestLocationPermission();
   if (!granted) {
-    throw new Error("Location permission denied. Attendance mark nahi ho sakta.");
+    throw new Error("Location permission was denied. Please allow location access to punch your attendance.");
   }
 
   const servicesEnabled = await Location.hasServicesEnabledAsync();
   if (!servicesEnabled) {
-    throw new Error("Location service off hai. Service on karke dobara try karein.");
+    throw new Error("Location services (GPS) are turned off. Please enable GPS in your phone settings and try again.");
   }
 
   const position = await Location.getCurrentPositionAsync({
@@ -2689,7 +2750,7 @@ function TeacherGpsAttendancePanel({ session }) {
   const submitPendingCheckout = async (request) => {
     if (!request?.id) return;
     if (checkoutForm.reason === "Other" && !checkoutForm.remarks.trim()) {
-      setError("Other reason ke liye remarks required hai.");
+      setError("Please provide remarks explaining your other leave reason.");
       return;
     }
 
@@ -2710,7 +2771,7 @@ function TeacherGpsAttendancePanel({ session }) {
 
   const submitLeave = async () => {
     if (!leaveForm.reason.trim()) {
-      setError("Leave reason required hai.");
+      setError("Please select a reason for your leave request.");
       return;
     }
     setSaving(true);
@@ -2743,13 +2804,13 @@ function TeacherGpsAttendancePanel({ session }) {
       {message ? <Notice tone="success" text={message} /> : null}
 
       {settingsMissing ? (
-        <Notice tone="error" text="School location settings configure nahi hai. Admin se setup karwayein." />
+        <Notice tone="error" text="School campus location boundary has not been configured yet. Please contact the office." />
       ) : null}
 
       {lockedRequest ? (
         <View style={styles.marksCard}>
           <View style={styles.inlineTitleRow}>
-            <Feather name="alert-triangle" size={18} color="#047857" />
+            <Feather name="alert-triangle" size={18} color="#2563eb" />
             <Text style={styles.sectionTitle}>Checkout Missing</Text>
           </View>
           <Text style={styles.rowMeta}>
@@ -2813,7 +2874,7 @@ function TeacherGpsAttendancePanel({ session }) {
             (saving || !settings || Boolean(attendance?.check_in_at) || Boolean(lockedRequest)) && styles.disabledButton,
           ]}
         >
-          <Feather name="log-in" size={18} color="#047857" />
+          <Feather name="log-in" size={18} color="#2563eb" />
           <Text style={styles.actionButtonText}>Check In</Text>
         </Pressable>
         <Pressable
@@ -2864,6 +2925,65 @@ function TeacherGpsAttendancePanel({ session }) {
             </View>
           ) : null}
         </View>
+        <View style={styles.leavePresetBar}>
+          <Text style={styles.leavePresetLabel}>Quick Duration Preset</Text>
+          <View style={styles.leavePresetRow}>
+            <Pressable
+              onPress={() => {
+                const s = todayIso();
+                setLeaveForm((prev) => ({ ...prev, from_date: s, to_date: s }));
+              }}
+              style={[
+                styles.leavePresetPill,
+                leaveForm.from_date === todayIso() && leaveForm.to_date === todayIso() && styles.leavePresetPillActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.leavePresetPillText,
+                  leaveForm.from_date === todayIso() && leaveForm.to_date === todayIso() && styles.leavePresetPillTextActive,
+                ]}
+              >
+                Today (1 Day)
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const tm = new Date();
+                tm.setDate(tm.getDate() + 1);
+                const s = tm.toISOString().slice(0, 10);
+                setLeaveForm((prev) => ({ ...prev, from_date: s, to_date: s }));
+              }}
+              style={styles.leavePresetPill}
+            >
+              <Text style={styles.leavePresetPillText}>Tomorrow</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const s1 = todayIso();
+                const d2 = new Date();
+                d2.setDate(d2.getDate() + 1);
+                const s2 = d2.toISOString().slice(0, 10);
+                setLeaveForm((prev) => ({ ...prev, from_date: s1, to_date: s2 }));
+              }}
+              style={styles.leavePresetPill}
+            >
+              <Text style={styles.leavePresetPillText}>2 Days</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const s1 = todayIso();
+                const d3 = new Date();
+                d3.setDate(d3.getDate() + 2);
+                const s3 = d3.toISOString().slice(0, 10);
+                setLeaveForm((prev) => ({ ...prev, from_date: s1, to_date: s3 }));
+              }}
+              style={styles.leavePresetPill}
+            >
+              <Text style={styles.leavePresetPillText}>3 Days</Text>
+            </Pressable>
+          </View>
+        </View>
         <Text style={styles.inputLabel}>From Date</Text>
         <TextInput style={styles.input} value={leaveForm.from_date} onChangeText={(value) => setLeaveForm((prev) => ({ ...prev, from_date: value }))} placeholder="YYYY-MM-DD" placeholderTextColor="#8a8f98" />
         <Text style={styles.inputLabel}>To Date</Text>
@@ -2884,7 +3004,7 @@ function TeacherGpsAttendancePanel({ session }) {
 
       <View style={[styles.list, styles.topGap]}>
         <View style={styles.inlineTitleRow}>
-          <Feather name="clock" size={18} color="#047857" />
+          <Feather name="clock" size={18} color="#2563eb" />
           <Text style={styles.sectionTitle}>Leave Status</Text>
         </View>
         {leaves.length ? leaves.slice(0, 5).map((leave) => (
@@ -2895,7 +3015,7 @@ function TeacherGpsAttendancePanel({ session }) {
             </View>
             <StatusPill status={leave.status} />
           </View>
-        )) : <EmptyState title="No leave" text="Abhi tak leave request nahi hai." />}
+        )) : <EmptyState title="No leave" text="You have not submitted any leave requests yet." />}
       </View>
     </View>
   );
@@ -3057,7 +3177,7 @@ function TeacherGpsHistoryPanel({ session }) {
                 </View>
                 <Text style={styles.monthBreakdownValue}>{row.working_days || 0}</Text>
               </Pressable>
-            )) : <EmptyState title="No history" text="Is year ke liye history records nahi mile." />}
+            )) : <EmptyState title="No history" text="No attendance history records found for this academic session." />}
           </View>
 
           <View style={[styles.list, styles.topGap]}>
@@ -3072,7 +3192,7 @@ function TeacherGpsHistoryPanel({ session }) {
                 </View>
                 <Text style={styles.rowSub}>{row.total_records || 0} records</Text>
               </View>
-            )) : <EmptyState title="No yearly summary" text="Year summary available nahi hai." />}
+            )) : <EmptyState title="No yearly summary" text="Attendance summary is currently not available for this year." />}
           </View>
         </View>
       ) : null}
@@ -3099,8 +3219,8 @@ const getSubjectIcon = (subjectName = "") => {
 };
 
 const getMarksGrade = (percentage) => {
-  if (percentage >= 90) return { grade: "A+", label: "Outstanding", color: "#047857", bg: "#ecfdf5" };
-  if (percentage >= 80) return { grade: "A", label: "Excellent", color: "#059669", bg: "#ecfdf5" };
+  if (percentage >= 90) return { grade: "A+", label: "Outstanding", color: "#2563eb", bg: "#eff6ff" };
+  if (percentage >= 80) return { grade: "A", label: "Excellent", color: "#059669", bg: "#eff6ff" };
   if (percentage >= 70) return { grade: "B+", label: "Very Good", color: "#0284c7", bg: "#f0f9ff" };
   if (percentage >= 60) return { grade: "B", label: "Good", color: "#2563eb", bg: "#eff6ff" };
   if (percentage >= 50) return { grade: "C", label: "Average", color: "#d97706", bg: "#fffbeb" };
@@ -3317,13 +3437,13 @@ function SubmitMarksPanel({ assignment, session, students }) {
 
   const saveMarks = async () => {
     if (!assignment) {
-      setError("Class assignment nahi mila.");
+      setError("Teacher class assignment not found. Please contact the administrator.");
       return;
     }
 
     const parsedRollNo = Number(rollNo);
     if (!terminal || !parsedRollNo || parsedRollNo < 1) {
-      setError("Terminal aur valid roll number required hai.");
+      setError("Please choose an exam terminal and enter a valid roll number.");
       return;
     }
 
@@ -3343,7 +3463,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
       .filter((mark) => Number(mark.external_marks || 0) > 0 || Number(mark.internal_marks || 0) > 0);
 
     if (!marksPayload.length) {
-      setError("Kam se kam ek subject ke marks enter karein.");
+      setError("Please enter marks for at least one subject before saving.");
       return;
     }
 
@@ -3367,7 +3487,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
   };
 
   if (!assignment) {
-    return <EmptyState title="No assignment" text="Marks submit karne ke liye teacher class assignment required hai." />;
+    return <EmptyState title="No assignment" text="You must have an assigned class to submit student examination marks." />;
   }
 
   return (
@@ -3376,7 +3496,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
       <View style={styles.marksHeroShell}>
         <View style={styles.marksHeroTop}>
           <View style={styles.marksHeroBadge}>
-            <Feather name="award" size={11} color="#a7f3d0" />
+            <Feather name="award" size={11} color="#bfdbfe" />
             <Text style={styles.marksHeroBadgeText}>
               Class {assignment.class} - {assignment.section} • Session {academicYear}
             </Text>
@@ -3447,7 +3567,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
             onPress={() => hasPrev && selectStudent(students[currentIndex - 1])}
             style={[styles.marksStepperBtn, (!hasPrev || saving) && styles.marksStepperBtnDisabled]}
           >
-            <Feather name="chevron-left" size={14} color="#047857" />
+            <Feather name="chevron-left" size={14} color="#2563eb" />
             <Text style={styles.marksStepperBtnText}>Prev</Text>
           </Pressable>
 
@@ -3461,7 +3581,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
             style={[styles.marksStepperBtn, (!hasNext || saving) && styles.marksStepperBtnDisabled]}
           >
             <Text style={styles.marksStepperBtnText}>Next</Text>
-            <Feather name="chevron-right" size={14} color="#047857" />
+            <Feather name="chevron-right" size={14} color="#2563eb" />
           </Pressable>
         </View>
 
@@ -3470,7 +3590,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
           onPress={() => setShowRoster((prev) => !prev)}
           style={styles.marksRosterToggle}
         >
-          <Feather name={showRoster ? "chevron-up" : "search"} size={12} color="#047857" />
+          <Feather name={showRoster ? "chevron-up" : "search"} size={12} color="#2563eb" />
           <Text style={styles.marksRosterToggleText}>
             {showRoster ? "Hide Student Roster" : "Search / Pick Another Student"}
           </Text>
@@ -3554,7 +3674,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
           <Text style={styles.marksNextStudentText}>
             Grade Next Student: Roll #{nextStudent.rollNo} ({nextStudent.name})
           </Text>
-          <Feather name="arrow-right" size={14} color="#047857" />
+          <Feather name="arrow-right" size={14} color="#2563eb" />
         </Pressable>
       ) : null}
 
@@ -3578,7 +3698,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
             <View key={subject.id || subject.name} style={styles.marksItemCard}>
               <View style={styles.marksItemHeader}>
                 <View style={styles.marksItemIconWrap}>
-                  <Feather name={icon} size={16} color="#047857" />
+                  <Feather name={icon} size={16} color="#2563eb" />
                 </View>
                 <View style={styles.marksItemTitles}>
                   <Text style={styles.marksItemName}>{subject.name}</Text>
@@ -3651,7 +3771,7 @@ function SubmitMarksPanel({ assignment, session, students }) {
       ) : null}
 
       {!loading && !subjects.length ? (
-        <EmptyState title="No subjects" text="Selected class/section ke subjects backend me nahi mile." />
+        <EmptyState title="No subjects" text="No subjects configured for the selected class and section." />
       ) : null}
 
       {/* 5. ACTIONS: CLEAR & SUBMIT */}
@@ -3663,8 +3783,8 @@ function SubmitMarksPanel({ assignment, session, students }) {
             style={[styles.outlineButton, { flex: 1, paddingVertical: 12, alignItems: "center", justifyContent: "center" }]}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Feather name="rotate-ccw" size={14} color="#047857" />
-              <Text style={{ color: "#047857", fontWeight: "800", fontSize: 13 }}>Clear</Text>
+              <Feather name="rotate-ccw" size={14} color="#2563eb" />
+              <Text style={{ color: "#2563eb", fontWeight: "800", fontSize: 13 }}>Clear</Text>
             </View>
           </Pressable>
         ) : null}
@@ -3727,7 +3847,7 @@ function ViewMarksPanel({ assignment, session }) {
   }, [loadMarks]);
 
   if (!assignment) {
-    return <EmptyState title="No assignment" text="Marks view karne ke liye teacher class assignment required hai." />;
+    return <EmptyState title="No assignment" text="You must have an assigned class to view scorecards." />;
   }
 
   const rows = marksData?.students || [];
@@ -3801,7 +3921,7 @@ function ViewMarksPanel({ assignment, session }) {
           <MetricCard label="Pending" value={pendingCount} tone="amber" />
           <MetricCard label="Visible" value={filteredRows.length} tone="red" />
         </View>
-        <Text style={styles.dashboardHint}>Submitted ka matlab completed marks. Pending wale students me abhi kuch subjects baaki hain.</Text>
+        <Text style={styles.dashboardHint}>Completed indicates all subject marks are entered. Pending indicates missing subject scores.</Text>
         <View style={styles.dashboardFilterRow}>
           {[
             { key: "all", label: "All" },
@@ -3870,24 +3990,28 @@ function ViewMarksPanel({ assignment, session }) {
       ) : null}
 
       {!loading && !rows.length ? (
-        <EmptyState title="No marks found" text="Selected terminal ke liye marks records nahi mile." />
+        <EmptyState title="No marks found" text="No exam mark records found for the selected exam terminal." />
       ) : null}
       {!loading && rows.length && !filteredRows.length ? (
-        <EmptyState title="No filtered marks" text="Is filter me koi student nahi mila. Dusra filter try karo." />
+        <EmptyState title="No filtered marks" text="No students match your filter. Please try a different search or filter." />
       ) : null}
     </View>
   );
 }
 
-function ReportsPanel({ assignment, session, students }) {
+function ReportsPanel({ assignment, onOpen, session, students }) {
   const [month, setMonth] = useState(monthIso());
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [viewMode, setViewMode] = useState("roster"); // 'roster' | 'daily'
+  const [filterType, setFilterType] = useState("all"); // 'all' | 'risk' | 'good'
+  const [search, setSearch] = useState("");
+
   const studentMap = useMemo(() => new Map(students.map((student) => [student.id, student])), [students]);
   const summary = summarizeRecords(records);
-  const workingDays = summary.present + summary.absent + summary.late;
-  const percentage = workingDays ? Math.round(((summary.present + summary.late) / workingDays) * 100) : 0;
+  const totalRecordedMarks = summary.present + summary.absent + summary.late;
+  const classPercentage = totalRecordedMarks ? Math.round(((summary.present + summary.late) / totalRecordedMarks) * 100) : 0;
 
   useEffect(() => {
     const loadReports = async () => {
@@ -3914,32 +4038,438 @@ function ReportsPanel({ assignment, session, students }) {
   }, [assignment, month, session.token]);
 
   if (!assignment) {
-    return <EmptyState title="No assignment" text="Reports dekhne ke liye teacher class assignment required hai." />;
+    return (
+      <EmptyState
+        title="No Class Assigned"
+        text="A class assignment is required to view classroom attendance analytics and monthly reports."
+      />
+    );
   }
 
+  const changeMonth = (delta) => {
+    const [y, m] = month.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    const ny = d.getFullYear();
+    const nm = String(d.getMonth() + 1).padStart(2, "0");
+    setMonth(`${ny}-${nm}`);
+  };
+
+  const setThisMonth = () => {
+    setMonth(monthIso());
+  };
+
+  const setLastMonth = () => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    const ny = d.getFullYear();
+    const nm = String(d.getMonth() + 1).padStart(2, "0");
+    setMonth(`${ny}-${nm}`);
+  };
+
+  // 1. Unique school days recorded in this month
+  const uniqueDates = Array.from(new Set(records.map((r) => r.attendance_date))).sort((a, b) => b.localeCompare(a));
+  const totalSchoolDays = uniqueDates.length;
+
+  // 2. Aggregate per student
+  const studentReports = students.map((student) => {
+    const studentRecs = records.filter((r) => r.student_id === student.id);
+    const presentCount = studentRecs.filter((r) => r.status === "present").length;
+    const absentCount = studentRecs.filter((r) => r.status === "absent").length;
+    const lateCount = studentRecs.filter((r) => r.status === "late").length;
+    const attended = presentCount + lateCount;
+    const percentage = totalSchoolDays > 0 ? Math.round((attended / totalSchoolDays) * 100) : 0;
+
+    return {
+      ...student,
+      presentCount,
+      absentCount,
+      lateCount,
+      attended,
+      totalSchoolDays,
+      percentage,
+      isAtRisk: totalSchoolDays > 0 && percentage < 75,
+    };
+  }).sort((a, b) => {
+    const rollA = Number(a.rollNo || a.roll_no || 999);
+    const rollB = Number(b.rollNo || b.roll_no || 999);
+    return rollA - rollB;
+  });
+
+  const atRiskStudents = studentReports.filter((s) => s.isAtRisk);
+  const goodStudents = studentReports.filter((s) => !s.isAtRisk && s.percentage >= 75);
+
+  const filteredStudents = studentReports.filter((s) => {
+    if (filterType === "risk" && !s.isAtRisk) return false;
+    if (filterType === "good" && (s.isAtRisk || s.percentage < 75)) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchName = String(s.name || "").toLowerCase().includes(q);
+      const matchRoll = String(s.rollNo || s.roll_no || "").toLowerCase().includes(q);
+      const matchPhone = String(s.mobile || "").includes(q);
+      if (!matchName && !matchRoll && !matchPhone) return false;
+    }
+    return true;
+  });
+
+  // 3. Day-wise breakdown
+  const dayWiseReports = uniqueDates.map((date) => {
+    const dateRecs = records.filter((r) => r.attendance_date === date);
+    const present = dateRecs.filter((r) => r.status === "present").length;
+    const absent = dateRecs.filter((r) => r.status === "absent").length;
+    const late = dateRecs.filter((r) => r.status === "late").length;
+    const absentStudentNames = dateRecs
+      .filter((r) => r.status === "absent")
+      .map((r) => studentMap.get(r.student_id)?.name)
+      .filter(Boolean);
+
+    return {
+      date,
+      total: dateRecs.length,
+      present,
+      absent,
+      late,
+      absentStudentNames,
+    };
+  });
+
   return (
-    <View>
-      <Text style={styles.sectionTitle}>Monthly Reports</Text>
-      <View style={styles.inlineField}>
-        <Text style={styles.inputLabel}>Month</Text>
-        <TextInput
-          onChangeText={setMonth}
-          placeholder="YYYY-MM"
-          placeholderTextColor="#8a8f98"
-          style={styles.input}
-          value={month}
-        />
+    <View style={styles.repPageShell}>
+      {/* 1. MONTH SELECTOR & CLASS HEADER */}
+      <View style={styles.repMonthNavCard}>
+        <View style={styles.repMonthTopRow}>
+          <Pressable onPress={() => changeMonth(-1)} style={styles.repMonthChevronBtn}>
+            <Feather name="chevron-left" size={20} color="#2563eb" />
+          </Pressable>
+          <View style={styles.repMonthCenter}>
+            <Text style={styles.repMonthTitle}>{formatMonthLabel(month)}</Text>
+            <View style={styles.repClassBadge}>
+              <Feather name="book-open" size={11} color="#1d4ed8" />
+              <Text style={styles.repClassBadgeText}>
+                Class {assignment.class} - {assignment.section} • {students.length} Students
+              </Text>
+            </View>
+          </View>
+          <Pressable onPress={() => changeMonth(1)} style={styles.repMonthChevronBtn}>
+            <Feather name="chevron-right" size={20} color="#2563eb" />
+          </Pressable>
+        </View>
+
+        {/* Quick Month Filter Pills */}
+        <View style={styles.repQuickPillsRow}>
+          <Pressable
+            onPress={setThisMonth}
+            style={[styles.repQuickPill, month === monthIso() && styles.repQuickPillActive]}
+          >
+            <Text style={[styles.repQuickPillText, month === monthIso() && styles.repQuickPillTextActive]}>
+              This Month
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={setLastMonth}
+            style={styles.repQuickPill}
+          >
+            <Text style={styles.repQuickPillText}>Last Month</Text>
+          </Pressable>
+        </View>
       </View>
+
       {error ? <Notice tone="error" text={error} /> : null}
-      {loading ? <LoadingBlock label="Reports loading..." /> : null}
-      <View style={styles.metricGrid}>
-        <MetricCard label="Present" value={summary.present} tone="green" />
-        <MetricCard label="Absent" value={summary.absent} tone="red" />
-        <MetricCard label="Late" value={summary.late} tone="amber" />
-        <MetricCard label="Attendance" value={`${percentage}%`} tone="teal" />
-      </View>
-      <View style={styles.topGap} />
-      {!loading ? <RecordList records={records} studentMap={studentMap} /> : null}
+      {loading ? <LoadingBlock label="Calculating monthly class reports..." /> : null}
+
+      {/* 2. OVERVIEW METRICS HERO */}
+      {!loading ? (
+        <View style={styles.repOverviewCard}>
+          <View style={styles.repOverviewTopRow}>
+            <View style={styles.repOverviewScoreWrap}>
+              <Text style={styles.repOverviewEyebrow}>CLASS ATTENDANCE RATE</Text>
+              <Text style={styles.repOverviewScore}>{classPercentage}%</Text>
+            </View>
+            <View
+              style={[
+                styles.repStatusTag,
+                classPercentage >= 80 ? styles.repStatusTagGood : styles.repStatusTagWarn,
+              ]}
+            >
+              <Feather
+                name={classPercentage >= 80 ? "check-circle" : "alert-triangle"}
+                size={13}
+                color={classPercentage >= 80 ? "#16a34a" : "#d97706"}
+              />
+              <Text
+                style={[
+                  styles.repStatusTagText,
+                  classPercentage >= 80 ? { color: "#16a34a" } : { color: "#d97706" },
+                ]}
+              >
+                {classPercentage >= 80 ? "Healthy Rate" : "Needs Attention"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Class Attendance Progress Bar */}
+          <View style={styles.repProgressTrack}>
+            <View
+              style={[
+                styles.repProgressFill,
+                { width: `${Math.min(100, Math.max(3, classPercentage))}%` },
+                classPercentage < 75 && { backgroundColor: "#dc2626" },
+              ]}
+            />
+          </View>
+
+          {/* 4 Tally Pills */}
+          <View style={styles.repTallyGrid}>
+            <View style={[styles.repTallyPill, { backgroundColor: "#eff6ff", borderColor: "#bfdbfe" }]}>
+              <Text style={[styles.repTallyNum, { color: "#2563eb" }]}>{totalSchoolDays}</Text>
+              <Text style={styles.repTallyLabel}>School Days</Text>
+            </View>
+            <View style={[styles.repTallyPill, { backgroundColor: "#f0fdf4", borderColor: "#bbf7d0" }]}>
+              <Text style={[styles.repTallyNum, { color: "#16a34a" }]}>{summary.present}</Text>
+              <Text style={styles.repTallyLabel}>Present</Text>
+            </View>
+            <View style={[styles.repTallyPill, { backgroundColor: "#fef2f2", borderColor: "#fecaca" }]}>
+              <Text style={[styles.repTallyNum, { color: "#dc2626" }]}>{summary.absent}</Text>
+              <Text style={styles.repTallyLabel}>Absent</Text>
+            </View>
+            <View style={[styles.repTallyPill, { backgroundColor: "#fffbeb", borderColor: "#fde68a" }]}>
+              <Text style={[styles.repTallyNum, { color: "#d97706" }]}>{summary.late}</Text>
+              <Text style={styles.repTallyLabel}>Late</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* 3. EMPTY STATE OR REPORTS CONTENT */}
+      {!loading && !records.length ? (
+        <View style={styles.repEmptyCard}>
+          <View style={styles.repEmptyIconCircle}>
+            <Feather name="calendar" size={32} color="#2563eb" />
+          </View>
+          <Text style={styles.repEmptyTitle}>No Attendance Records in {formatMonthLabel(month)}</Text>
+          <Text style={styles.repEmptySub}>
+            Daily attendance has not been saved for Class {assignment.class} - {assignment.section} in this month yet.
+          </Text>
+          {onOpen ? (
+            <Pressable onPress={() => onOpen("attendance")} style={styles.repEmptyActionBtn}>
+              <Feather name="check-square" size={16} color="#ffffff" />
+              <Text style={styles.repEmptyActionBtnText}>Take Today's Attendance</Text>
+              <Feather name="arrow-right" size={16} color="#ffffff" />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* 4. VIEW MODE TOGGLE (Roster vs Daily) */}
+      {!loading && records.length ? (
+        <View style={styles.repViewSwitchCard}>
+          <Pressable
+            onPress={() => setViewMode("roster")}
+            style={[styles.repViewBtn, viewMode === "roster" && styles.repViewBtnActive]}
+          >
+            <Feather name="users" size={14} color={viewMode === "roster" ? "#ffffff" : "#64748b"} />
+            <Text style={[styles.repViewBtnText, viewMode === "roster" && styles.repViewBtnTextActive]}>
+              Student Roster ({students.length})
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setViewMode("daily")}
+            style={[styles.repViewBtn, viewMode === "daily" && styles.repViewBtnActive]}
+          >
+            <Feather name="calendar" size={14} color={viewMode === "daily" ? "#ffffff" : "#64748b"} />
+            <Text style={[styles.repViewBtnText, viewMode === "daily" && styles.repViewBtnTextActive]}>
+              Daily Register ({totalSchoolDays} Days)
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {/* 5. STUDENT ROSTER BREAKDOWN VIEW */}
+      {!loading && records.length && viewMode === "roster" ? (
+        <View style={styles.repRosterSection}>
+          {/* Search Box */}
+          <View style={styles.repSearchRow}>
+            <Feather name="search" size={16} color="#2563eb" />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search student by name or roll no..."
+              placeholderTextColor="#94a3b8"
+              style={styles.repSearchInput}
+            />
+            {search ? (
+              <Pressable onPress={() => setSearch("")} hitSlop={8}>
+                <Feather name="x-circle" size={16} color="#94a3b8" />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {/* Filter Chips */}
+          <View style={styles.repFilterChipsRow}>
+            <Pressable
+              onPress={() => setFilterType("all")}
+              style={[styles.repChip, filterType === "all" && styles.repChipActive]}
+            >
+              <Text style={[styles.repChipText, filterType === "all" && styles.repChipTextActive]}>
+                All ({studentReports.length})
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setFilterType("risk")}
+              style={[styles.repChip, filterType === "risk" && styles.repChipRiskActive]}
+            >
+              <Text style={[styles.repChipText, filterType === "risk" && styles.repChipRiskTextActive]}>
+                Low Attendance &lt;75% ({atRiskStudents.length})
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setFilterType("good")}
+              style={[styles.repChip, filterType === "good" && styles.repChipGoodActive]}
+            >
+              <Text style={[styles.repChipText, filterType === "good" && styles.repChipGoodTextActive]}>
+                Good &ge;75% ({goodStudents.length})
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Student Cards List */}
+          <View style={styles.repList}>
+            {filteredStudents.map((student) => {
+              const isExcellent = student.percentage >= 85;
+              const isGood = student.percentage >= 75 && student.percentage < 85;
+              const isLow = student.percentage < 75;
+
+              return (
+                <View key={student.id} style={styles.repStudentCard}>
+                  <View style={styles.repStudentTopRow}>
+                    <View style={styles.repStudentAvatar}>
+                      <Text style={styles.repStudentAvatarText}>{getInitials(student.name)}</Text>
+                    </View>
+                    <View style={styles.repStudentMeta}>
+                      <Text numberOfLines={1} style={styles.repStudentName}>
+                        {student.name || "Student"}
+                      </Text>
+                      <Text style={styles.repStudentSub}>
+                        Roll #{student.rollNo || student.roll_no || "-"} • Present: {student.presentCount} / {student.totalSchoolDays} Days
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.repStudentPill,
+                        isExcellent && styles.repStudentPillGreen,
+                        isGood && styles.repStudentPillBlue,
+                        isLow && styles.repStudentPillRed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.repStudentPillText,
+                          isExcellent && { color: "#16a34a" },
+                          isGood && { color: "#2563eb" },
+                          isLow && { color: "#dc2626" },
+                        ]}
+                      >
+                        {student.percentage}%
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Individual Student Progress Bar */}
+                  <View style={styles.repStudentBarTrack}>
+                    <View
+                      style={[
+                        styles.repStudentBarFill,
+                        { width: `${Math.min(100, Math.max(3, student.percentage))}%` },
+                        isLow && { backgroundColor: "#dc2626" },
+                        isGood && { backgroundColor: "#2563eb" },
+                        isExcellent && { backgroundColor: "#16a34a" },
+                      ]}
+                    />
+                  </View>
+
+                  {/* Absent count and Call Parent Button if low attendance */}
+                  <View style={styles.repStudentBottomRow}>
+                    <Text style={styles.repStudentCountsText}>
+                      Absent: {student.absentCount} d | Late: {student.lateCount} d
+                    </Text>
+                    {isLow && student.mobile ? (
+                      <Pressable
+                        onPress={() => Linking.openURL(`tel:${student.mobile}`)}
+                        style={styles.repCallParentBtn}
+                      >
+                        <Feather name="phone-call" size={11} color="#dc2626" />
+                        <Text style={styles.repCallParentText}>Alert Parent</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+
+            {!filteredStudents.length && search ? (
+              <EmptyState title="No Student Found" text={`No student found matching "${search}".`} />
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
+      {/* 6. DAILY REGISTER VIEW */}
+      {!loading && records.length && viewMode === "daily" ? (
+        <View style={styles.repDailySection}>
+          <Text style={styles.repDailyHeaderTitle}>Day-by-Day School Logs</Text>
+          <View style={styles.repDailyList}>
+            {dayWiseReports.map((day) => {
+              const parsed = new Date(day.date);
+              const dayOfWeek = !isNaN(parsed) ? parsed.toLocaleDateString("en-US", { weekday: "short" }) : "";
+              const formatted = formatDisplayDate(day.date);
+
+              return (
+                <View key={day.date} style={styles.repDayCard}>
+                  <View style={styles.repDayTopRow}>
+                    <View style={styles.repDayDateBox}>
+                      <Text style={styles.repDayDateNumber}>{String(day.date).slice(8, 10)}</Text>
+                      <Text style={styles.repDayDateMonth}>{dayOfWeek.toUpperCase()}</Text>
+                    </View>
+                    <View style={styles.repDayMeta}>
+                      <Text style={styles.repDayFullDate}>{formatted}</Text>
+                      <Text style={styles.repDayStatusText}>
+                        Total Marked: {day.total} Students
+                      </Text>
+                    </View>
+                    <View style={styles.repDayTallyPills}>
+                      <View style={[styles.repDayMiniPill, { backgroundColor: "#f0fdf4" }]}>
+                        <Text style={[styles.repDayMiniPillText, { color: "#16a34a" }]}>P: {day.present}</Text>
+                      </View>
+                      <View style={[styles.repDayMiniPill, { backgroundColor: "#fef2f2" }]}>
+                        <Text style={[styles.repDayMiniPillText, { color: "#dc2626" }]}>A: {day.absent}</Text>
+                      </View>
+                      {day.late > 0 ? (
+                        <View style={[styles.repDayMiniPill, { backgroundColor: "#fffbeb" }]}>
+                          <Text style={[styles.repDayMiniPillText, { color: "#d97706" }]}>L: {day.late}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {/* Absent student names preview */}
+                  {day.absentStudentNames.length > 0 ? (
+                    <View style={styles.repDayAbsentRow}>
+                      <Text style={styles.repDayAbsentLabel}>Absent:</Text>
+                      <Text numberOfLines={1} style={styles.repDayAbsentList}>
+                        {day.absentStudentNames.join(", ")}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.repDayAllPresentRow}>
+                      <Feather name="check" size={11} color="#16a34a" />
+                      <Text style={styles.repDayAllPresentText}>100% Attendance on this day</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -4126,7 +4656,7 @@ function StudentHistoryPanel({ session, students }) {
         </View>
       ) : null}
       {!loading && !students.length ? (
-        <EmptyState title="No students" text="Student history ke liye assigned class me students nahi mile." />
+        <EmptyState title="No students" text="No student records found to display individual history." />
       ) : null}
     </View>
   );
@@ -4219,7 +4749,7 @@ function HolidayCalendarPanel({ session }) {
       : "Holidays are managed by the school admin.";
   const panelInfoSubtext =
     activeTab === "leaveRequests" && !isStudent
-      ? "Month filter se selected month ke requests dikhenge."
+      ? "Filter by month to view student leave requests."
       : "Fridays are automatically marked as weekly off.";
 
   return (
@@ -4301,7 +4831,7 @@ function HolidayCalendarPanel({ session }) {
 
       <View style={styles.holidayInfoCard}>
         <View style={styles.holidayInfoIconWrap}>
-          <Feather name="info" size={18} color="#047857" />
+          <Feather name="info" size={18} color="#2563eb" />
         </View>
         <View style={styles.holidayInfoBody}>
           <Text style={styles.holidayInfoTitle}>{panelInfoTitle}</Text>
@@ -4379,7 +4909,7 @@ function HolidayCalendarPanel({ session }) {
             })}
           </View>
         ) : (
-          <EmptyState title="No leave requests" text="Selected month me koi leave request nahi mili." />
+          <EmptyState title="No leave requests" text="No leave requests found for the selected month." />
         )
       ) : null}
 
@@ -4412,7 +4942,7 @@ function HolidayCalendarPanel({ session }) {
                       <Text style={styles.holidayTypeText}>{chipText}</Text>
                     </View>
                     <View style={styles.holidayIconTile}>
-                      <Feather name={decorIcon} size={24} color="#047857" />
+                      <Feather name={decorIcon} size={24} color="#2563eb" />
                     </View>
                   </View>
                 </View>
@@ -4420,7 +4950,7 @@ function HolidayCalendarPanel({ session }) {
             })}
           </View>
         ) : (
-          <EmptyState title="No holidays" text="Selected month me holiday records nahi mile." />
+          <EmptyState title="No holidays" text="No holidays scheduled for the selected month." />
         )
       ) : null}
     </View>
@@ -4500,7 +5030,7 @@ function StudentAttendance({ records = [], summary }) {
             <Feather name="calendar" size={32} color="#94a3b8" />
             <Text style={styles.studentAttEmptyTitle}>No attendance records</Text>
             <Text style={styles.studentAttEmptyText}>
-              Is session ke liye attendance record abhi tak update nahi hua hai.
+              Attendance records have not been recorded for this session yet.
             </Text>
           </View>
         ) : (
@@ -4551,12 +5081,12 @@ function StudentAttendance({ records = [], summary }) {
                     <Feather
                       name={isPresent ? "check" : isAbsent ? "x" : isLate ? "clock" : "circle"}
                       size={11}
-                      color={isPresent ? "#047857" : isAbsent ? "#e11d48" : isLate ? "#d97706" : "#475569"}
+                      color={isPresent ? "#2563eb" : isAbsent ? "#e11d48" : isLate ? "#d97706" : "#475569"}
                     />
                     <Text
                       style={[
                         styles.studentAttStatusText,
-                        isPresent && { color: "#047857" },
+                        isPresent && { color: "#2563eb" },
                         isAbsent && { color: "#e11d48" },
                         isLate && { color: "#d97706" },
                       ]}
@@ -4576,7 +5106,7 @@ function StudentAttendance({ records = [], summary }) {
 
 function RecordList({ records, studentMap }) {
   if (!records.length) {
-    return <EmptyState title="No attendance records" text="Is filter ke liye attendance records nahi mile." />;
+    return <EmptyState title="No attendance records" text="No attendance records found matching this filter." />;
   }
 
   return (
@@ -4601,7 +5131,7 @@ function RecordList({ records, studentMap }) {
 
 function StudentPicker({ selectedStudentId, students, onSelect }) {
   if (!students.length) {
-    return <EmptyState title="No students" text="Marks submit karne ke liye students load nahi hue." />;
+    return <EmptyState title="No students" text="No student records found to submit examination marks." />;
   }
 
   return (
@@ -4634,7 +5164,7 @@ function StudentDropdown({ selectedStudentId, students, onSelect }) {
   const [open, setOpen] = useState(false);
 
   if (!students.length) {
-    return <EmptyState title="No students" text="Marks submit karne ke liye students load nahi hue." />;
+    return <EmptyState title="No students" text="No student records found to submit examination marks." />;
   }
 
   const selectedStudent = students.find((student) => student.id === selectedStudentId) || students[0];
@@ -4728,7 +5258,7 @@ function Notice({ tone, text }) {
   const toneStyle = tone === "error" ? styles.noticeError : tone === "success" ? styles.noticeSuccess : styles.noticeInfo;
   const textStyle = tone === "error" ? styles.noticeTextError : tone === "success" ? styles.noticeTextSuccess : styles.noticeTextInfo;
   const iconName = getNoticeIconName(tone);
-  const iconColor = tone === "error" ? "#9f2f21" : tone === "success" ? "#166534" : "#047857";
+  const iconColor = tone === "error" ? "#9f2f21" : tone === "success" ? "#166534" : "#2563eb";
 
   return (
     <View style={[styles.notice, toneStyle]}>
@@ -4827,11 +5357,11 @@ const getMetricIconName = (label = "") => {
 
 const getMetricIconColor = (tone = "") =>
   ({
-    teal: "#047857",
+    teal: "#2563eb",
     green: "#16a34a",
     red: "#ef4444",
     amber: "#f59e0b",
-  }[tone] || "#047857");
+  }[tone] || "#2563eb");
 
 const getNoticeIconName = (tone = "info") =>
   tone === "error" ? "alert-circle" : tone === "success" ? "check-circle" : "info";
@@ -4997,7 +5527,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   segmentButtonActive: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
   },
   segmentText: {
     color: "#52606d",
@@ -5020,7 +5550,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   inputLabel: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.3,
@@ -5038,7 +5568,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minHeight: 54,
     paddingHorizontal: 15,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 10,
@@ -5065,7 +5595,7 @@ const styles = StyleSheet.create({
     paddingRight: 14,
   },
   dropdownButtonActive: {
-    borderColor: "#047857",
+    borderColor: "#2563eb",
   },
   dropdownButtonText: {
     color: "#17202a",
@@ -5087,7 +5617,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     marginTop: 6,
     overflow: "hidden",
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
     shadowRadius: 18,
@@ -5097,7 +5627,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   dropdownItemActive: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
   },
   dropdownItemText: {
     color: "#17202a",
@@ -5126,7 +5656,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 2,
     overflow: "hidden",
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
@@ -5197,7 +5727,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 10,
     padding: 16,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
@@ -5226,8 +5756,8 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   monthBreakdownItemActive: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#047857",
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb",
   },
   monthBreakdownTitle: {
     color: "#17202a",
@@ -5264,8 +5794,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   dashboardFilterButtonActive: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#047857",
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb",
   },
   dashboardFilterText: {
     color: "#52606d",
@@ -5288,12 +5818,12 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: "center",
-    backgroundColor: "#047857",
+    backgroundColor: "#2563eb",
     borderRadius: 18,
     justifyContent: "center",
     marginTop: 16,
     minHeight: 56,
-    shadowColor: "#047857",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 18,
@@ -5334,21 +5864,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   actionButtonSoft: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderColor: "#c9daf7",
     borderWidth: 1,
   },
   actionButtonPrimary: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
     borderWidth: 1,
-    shadowColor: "#047857",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.18,
     shadowRadius: 16,
   },
   actionButtonText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 15,
     fontWeight: "900",
   },
@@ -5370,7 +5900,7 @@ const styles = StyleSheet.create({
   header: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderBottomColor: "#dfcfac",
+    borderBottomColor: "#e2e8f0",
     borderBottomWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -5394,7 +5924,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   headerSchool: {
-    color: "#0f5f63",
+    color: "#1e3a8a",
     fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase",
@@ -5409,7 +5939,7 @@ const styles = StyleSheet.create({
   },
   profileAvatar: {
     alignItems: "center",
-    backgroundColor: "#0f5f63",
+    backgroundColor: "#1e3a8a",
     borderColor: "#0b474a",
     borderRadius: 999,
     borderWidth: 2,
@@ -5450,7 +5980,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   logoutText: {
-    color: "#0f5f63",
+    color: "#1e3a8a",
     fontSize: 12,
     fontWeight: "900",
   },
@@ -5471,7 +6001,7 @@ const styles = StyleSheet.create({
   },
   profileBackButton: {
     alignItems: "center",
-    backgroundColor: "#0f5f63",
+    backgroundColor: "#1e3a8a",
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -5505,7 +6035,7 @@ const styles = StyleSheet.create({
   },
   profileHeroAvatar: {
     alignItems: "center",
-    backgroundColor: "#0f5f63",
+    backgroundColor: "#1e3a8a",
     borderRadius: 20,
     height: 68,
     overflow: "hidden",
@@ -5596,7 +6126,7 @@ const styles = StyleSheet.create({
   },
   profileModalAvatar: {
     alignItems: "center",
-    backgroundColor: "#0f5f63",
+    backgroundColor: "#1e3a8a",
     borderRadius: 18,
     height: 56,
     justifyContent: "center",
@@ -5680,7 +6210,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   profileMenuTitle: {
-    color: "#0f5f63",
+    color: "#1e3a8a",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.8,
@@ -5728,7 +6258,7 @@ const styles = StyleSheet.create({
   },
   legalBackButton: {
     alignItems: "center",
-    backgroundColor: "#0f5f63",
+    backgroundColor: "#1e3a8a",
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -5771,7 +6301,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   legalPointBullet: {
-    color: "#0f5f63",
+    color: "#1e3a8a",
     fontSize: 14,
     fontWeight: "900",
     lineHeight: 20,
@@ -5793,7 +6323,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   legalSectionTitle: {
-    color: "#0f5f63",
+    color: "#1e3a8a",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.8,
@@ -5874,7 +6404,7 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   sectionTabButtonActive: {
-    borderBottomColor: "#047857",
+    borderBottomColor: "#2563eb",
   },
   sectionTabIcon: {
     borderColor: "#8a8f98",
@@ -5884,7 +6414,7 @@ const styles = StyleSheet.create({
     width: 12,
   },
   sectionTabIconActive: {
-    borderColor: "#047857",
+    borderColor: "#2563eb",
   },
   sectionTabText: {
     color: "#8a8f98",
@@ -5892,7 +6422,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   sectionTabTextActive: {
-    color: "#047857",
+    color: "#2563eb",
   },
   loadingBlock: {
     alignItems: "center",
@@ -5906,14 +6436,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   heroPanel: {
-    backgroundColor: "#047857",
+    backgroundColor: "#2563eb",
     borderRadius: 24,
     borderWidth: 1,
     borderColor: "#059669",
     marginBottom: 14,
     overflow: "hidden",
     padding: 20,
-    shadowColor: "#047857",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 18,
@@ -5980,14 +6510,14 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 102,
     padding: 16,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
     width: "48%",
   },
   metric_teal: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
   },
   metric_green: {
     backgroundColor: "#ecfbf1",
@@ -6006,7 +6536,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   metricValue: {
-    color: "#06372b",
+    color: "#0f172a",
     fontSize: 23,
     fontWeight: "900",
     marginTop: 10,
@@ -6039,14 +6569,14 @@ const styles = StyleSheet.create({
     gap: 12,
     minHeight: 78,
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.05,
     shadowRadius: 16,
   },
   featureIcon: {
     alignItems: "center",
-    backgroundColor: "#d1fae5",
+    backgroundColor: "#dbeafe",
     borderRadius: 14,
     height: 42,
     justifyContent: "center",
@@ -6083,21 +6613,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
   },
   avatar: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderRadius: 16,
     height: 48,
     justifyContent: "center",
     width: 48,
   },
   avatarText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 13,
     fontWeight: "900",
   },
@@ -6159,7 +6689,7 @@ const styles = StyleSheet.create({
     minHeight: 132,
     paddingHorizontal: 18,
     paddingVertical: 18,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.04,
     shadowRadius: 18,
@@ -6177,7 +6707,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   holidayHeroTitle: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontSize: 33,
     fontWeight: "900",
     lineHeight: 40,
@@ -6206,7 +6736,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 12,
     padding: 18,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.04,
     shadowRadius: 18,
@@ -6228,7 +6758,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     minHeight: 64,
     paddingHorizontal: 18,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -6237,7 +6767,7 @@ const styles = StyleSheet.create({
     borderColor: "#bcd0f4",
   },
   holidayMonthButtonText: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     flex: 1,
     fontSize: 20,
     fontWeight: "900",
@@ -6274,7 +6804,7 @@ const styles = StyleSheet.create({
     minHeight: 86,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.03,
     shadowRadius: 14,
@@ -6321,7 +6851,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 14,
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.04,
     shadowRadius: 16,
@@ -6343,7 +6873,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   holidayDateDay: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontSize: 34,
     fontWeight: "900",
     lineHeight: 38,
@@ -6367,13 +6897,13 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   holidayItemTitle: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontSize: 19,
     fontWeight: "900",
     lineHeight: 24,
   },
   holidayItemDate: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 13,
     fontWeight: "900",
     marginTop: 6,
@@ -6413,7 +6943,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -6487,9 +7017,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   holidayTabButtonActive: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
-    shadowColor: "#047857",
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.16,
     shadowRadius: 10,
@@ -6517,7 +7047,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 12,
     padding: 16,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -6595,8 +7125,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   terminalButtonActive: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
   },
   terminalButtonLocked: {
     backgroundColor: "#f8fafc",
@@ -6622,7 +7152,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   terminalSubtextActive: {
-    color: "#d1fae5",
+    color: "#dbeafe",
   },
   terminalSubtextLocked: {
     color: "#94a3b8",
@@ -6638,8 +7168,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   studentChipActive: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
   },
   studentChipTitle: {
     color: "#17202a",
@@ -6662,7 +7192,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 10,
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -6677,7 +7207,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 10,
     padding: 16,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -6762,8 +7292,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   statusButtonActive: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
   },
   statusText: {
     color: "#52606d",
@@ -6782,14 +7312,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
   },
   recordRowActive: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#047857",
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb",
   },
   statusPill: {
     borderRadius: 8,
@@ -6810,7 +7340,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#dcfce7",
   },
   pill_locked: {
-    backgroundColor: "#d1fae5",
+    backgroundColor: "#dbeafe",
   },
   pill_pending: {
     backgroundColor: "#fef3c7",
@@ -6828,7 +7358,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 14,
     paddingVertical: 13,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -6870,7 +7400,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     padding: 24,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.04,
     shadowRadius: 14,
@@ -6889,167 +7419,85 @@ const styles = StyleSheet.create({
   },
   portalShell: {
     flex: 1,
-    backgroundColor: "#064e3b",
+    backgroundColor: "#ffffff",
   },
   portalContent: {
     alignItems: "center",
     flexGrow: 1,
-    paddingBottom: 240,
+    paddingBottom: 60,
   },
   portalFrame: {
     alignSelf: "center",
-    backgroundColor: "#064e3b",
+    backgroundColor: "#ffffff",
     flex: 1,
-    maxWidth: 430,
-    minHeight: "100%",
-    overflow: "hidden",
-    position: "relative",
+    maxWidth: 440,
     width: "100%",
-  },
-  portalPhotoLayer: {
-    backgroundColor: "#d1fae5",
-    borderBottomLeftRadius: 34,
-    borderBottomRightRadius: 34,
-    height: 202,
-    left: 0,
-    opacity: 0.96,
-    overflow: "hidden",
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  portalPhotoImage: {
-    height: 300,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: "100%",
-  },
-  portalPhotoWash: {
-    backgroundColor: "rgba(255,255,255,0.35)",
-    flex: 1,
-    zIndex: 1,
-  },
-  portalWhiteSheet: {
-    backgroundColor: "#f8fafc",
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 136,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    paddingTop: 36,
   },
   portalHero: {
     alignItems: "center",
-    paddingBottom: 10,
+    paddingTop: 10,
+    paddingBottom: 6,
     paddingHorizontal: 24,
-    paddingTop: 36,
-    zIndex: 2,
-  },
-  portalLogoWrap: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  portalLogoGlow: {
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
-    borderRadius: 999,
-    height: 118,
-    position: "absolute",
-    width: 118,
   },
   portalLogoRing: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#10b981",
-    borderRadius: 999,
-    borderWidth: 2.5,
-    elevation: 6,
-    height: 104,
     justifyContent: "center",
-    shadowColor: "#047857",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 22,
+    borderWidth: 1.5,
+    height: 80,
+    width: 80,
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    width: 104,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 4,
+    marginBottom: 12,
   },
   portalLogoImage: {
-    height: 90,
-    width: 90,
-  },
-  portalEyebrowRow: {
-    alignItems: "center",
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 3.5,
-  },
-  portalTinyLine: {
-    height: 0,
-    width: 0,
-  },
-  portalEyebrow: {
-    color: "#047857",
-    fontSize: 10.5,
-    fontWeight: "800",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
+    height: 64,
+    width: 64,
   },
   portalTitle: {
-    color: "#064e3b",
-    fontSize: 25,
+    color: "#0f172a",
+    fontSize: 22,
     fontWeight: "900",
-    letterSpacing: -0.3,
-    lineHeight: 29,
-    marginTop: 6,
+    letterSpacing: -0.4,
     textAlign: "center",
   },
   portalSubtitle: {
     color: "#64748b",
     fontSize: 13,
     fontWeight: "600",
-    marginTop: 2,
+    marginTop: 3,
     textAlign: "center",
   },
   portalSegment: {
     alignSelf: "center",
-    backgroundColor: "#e2e8f0",
-    borderRadius: 24,
-    elevation: 2,
+    backgroundColor: "#f1f5f9",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
     flexDirection: "row",
     height: 44,
-    marginTop: 12,
-    padding: 4,
+    marginTop: 22,
+    padding: 3,
     position: "relative",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    width: "86%",
-    maxWidth: 340,
-    zIndex: 3,
+    width: "88%",
+    maxWidth: 360,
   },
   portalSegmentThumb: {
-    backgroundColor: "#047857",
-    borderRadius: 20,
-    bottom: 4,
-    left: 4,
+    backgroundColor: "#1e3a8a",
+    borderRadius: 11,
+    bottom: 3,
+    left: 3,
     position: "absolute",
-    top: 4,
+    top: 3,
     width: "50%",
-    elevation: 3,
-    shadowColor: "#047857",
+    elevation: 2,
+    shadowColor: "#1e3a8a",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
@@ -7064,118 +7512,87 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   portalSegmentText: {
-    color: "#475569",
-    fontSize: 14.5,
+    color: "#64748b",
+    fontSize: 13.5,
     fontWeight: "700",
   },
   portalSegmentTextActive: {
     color: "#ffffff",
-    fontWeight: "900",
+    fontWeight: "800",
   },
-  portalFormCard: {
-    backgroundColor: "#fff",
-    borderRadius: 24,
-    elevation: 3,
-    marginHorizontal: 22,
-    marginTop: 12,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    shadowColor: "#06372b",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
-    borderColor: "#e2e8f0",
-    borderWidth: 1,
-    zIndex: 2,
-  },
-  portalFormTitle: {
-    color: "#064e3b",
-    fontSize: 21,
-    fontWeight: "900",
-    letterSpacing: -0.2,
-    textAlign: "center",
-  },
-  portalFormSubtitle: {
-    color: "#64748b",
-    fontSize: 12.5,
-    fontWeight: "600",
-    marginBottom: 10,
-    marginTop: 3,
-    textAlign: "center",
+  portalFormContainer: {
+    width: "88%",
+    maxWidth: 360,
+    alignSelf: "center",
+    marginTop: 20,
   },
   portalLabel: {
-    color: "#064e3b",
+    color: "#334155",
     fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0,
-    marginBottom: 5,
-    marginTop: 5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    marginTop: 12,
     textTransform: "uppercase",
   },
   portalInputShell: {
     alignItems: "center",
     backgroundColor: "#ffffff",
     borderColor: "#cbd5e1",
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1.2,
     flexDirection: "row",
-    height: 48,
-    overflow: "hidden",
+    height: 50,
+    paddingHorizontal: 12,
   },
-  portalInputIcon: {
-    alignItems: "center",
-    alignSelf: "stretch",
-    backgroundColor: "#f0fdf4",
-    borderRightColor: "#dcfce7",
-    borderRightWidth: 1.2,
-    justifyContent: "center",
-    width: 46,
-  },
-  portalInputIconText: {
-    color: "#047857",
-    fontSize: 14,
-    fontWeight: "900",
+  portalInputLeadingIcon: {
+    marginRight: 10,
   },
   portalInput: {
     color: "#0f172a",
     flex: 1,
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: "600",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    height: "100%",
+    paddingVertical: 0,
   },
   portalEyeButton: {
     alignItems: "center",
-    alignSelf: "stretch",
     justifyContent: "center",
-    minWidth: 46,
-    paddingHorizontal: 14,
-  },
-  portalEyeText: {
-    color: "#64748b",
-    fontSize: 12,
-    fontWeight: "900",
+    paddingLeft: 8,
+    paddingRight: 4,
   },
   portalHelperText: {
-    color: "#5b6470",
-    fontSize: 11,
-    fontWeight: "700",
-    lineHeight: 15,
+    color: "#64748b",
+    fontSize: 11.5,
+    fontWeight: "500",
+    lineHeight: 16,
     marginTop: 6,
   },
+  portalErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginTop: 10,
+  },
   portalErrorText: {
-    color: "#b42318",
+    color: "#b91c1c",
     fontSize: 12,
-    fontWeight: "800",
-    marginTop: 7,
+    fontWeight: "700",
+    flex: 1,
   },
   portalOptionsRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 9,
-    marginTop: 10,
+    marginTop: 14,
+    marginBottom: 10,
   },
   portalRememberRow: {
     alignItems: "center",
@@ -7184,71 +7601,60 @@ const styles = StyleSheet.create({
   },
   portalCheckBox: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#047857",
+    backgroundColor: "#ffffff",
+    borderColor: "#cbd5e1",
     borderRadius: 6,
     borderWidth: 1.5,
-    height: 20,
+    height: 19,
     justifyContent: "center",
-    width: 20,
+    width: 19,
   },
   portalCheckBoxActive: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
-  },
-  portalCheckText: {
-    color: "transparent",
-    fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 11,
+    backgroundColor: "#1e3a8a",
+    borderColor: "#1e3a8a",
   },
   portalRememberText: {
-    color: "#65758d",
-    fontSize: 12,
-    fontWeight: "700",
+    color: "#475569",
+    fontSize: 12.5,
+    fontWeight: "600",
   },
   portalForgotText: {
-    color: "#047857",
-    fontSize: 12,
-    fontWeight: "800",
+    color: "#1e3a8a",
+    fontSize: 12.5,
+    fontWeight: "700",
   },
   portalConsentRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: 10,
-    marginBottom: 12,
+    marginTop: 4,
+    marginBottom: 18,
   },
   portalConsentBox: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderColor: "#047857",
+    backgroundColor: "#ffffff",
+    borderColor: "#cbd5e1",
     borderRadius: 6,
     borderWidth: 1.5,
-    height: 20,
+    height: 19,
     justifyContent: "center",
-    width: 20,
+    width: 19,
   },
   portalConsentBoxActive: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
-  },
-  portalConsentCheck: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "900",
-    lineHeight: 11,
+    backgroundColor: "#1e3a8a",
+    borderColor: "#1e3a8a",
   },
   portalConsentText: {
-    color: "#304255",
+    color: "#64748b",
     flex: 1,
     flexWrap: "wrap",
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 17,
+    fontSize: 11.5,
+    fontWeight: "500",
+    lineHeight: 16,
   },
   portalConsentLink: {
-    color: "#047857",
-    fontWeight: "800",
+    color: "#1e3a8a",
+    fontWeight: "700",
     textDecorationLine: "underline",
   },
   passwordInputWrap: {
@@ -7256,7 +7662,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     borderColor: "#cbd5e1",
     borderRadius: 12,
-    borderWidth: 1.2,
+    borderWidth: 1,
     flexDirection: "row",
     height: 48,
     marginBottom: 12,
@@ -7287,8 +7693,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   portalLegalLinkButton: {
-    backgroundColor: "#edf3fb",
-    borderColor: "#d8e4f3",
+    backgroundColor: "#e8f2ff",
+    borderColor: "#bfdbfe",
     borderRadius: 999,
     borderWidth: 1,
     flexGrow: 1,
@@ -7297,28 +7703,48 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   portalLegalLinkText: {
-    color: "#124a9f",
+    color: "#1e3a8a",
     fontSize: 11,
-    fontWeight: "900",
+    fontWeight: "800",
     textAlign: "center",
   },
   portalLoginButton: {
     alignItems: "center",
-    backgroundColor: "#047857",
-    borderRadius: 999,
-    elevation: 5,
+    backgroundColor: "#1e3a8a",
+    borderRadius: 12,
+    elevation: 3,
     flexDirection: "row",
     justifyContent: "center",
-    minHeight: 46,
-    shadowColor: "#047857",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
+    height: 50,
+    shadowColor: "#1e3a8a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
   },
   portalLoginText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "900",
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  portalFooter: {
+    alignItems: "center",
+    marginTop: 36,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+  },
+  portalFooterText: {
+    color: "#94a3b8",
+    fontSize: 11.5,
+    fontWeight: "500",
+    textAlign: "center",
+    lineHeight: 16,
+  },
+  portalFooterAuthor: {
+    color: "#64748b",
+    fontSize: 11.5,
+    fontWeight: "600",
+    marginTop: 4,
+    textAlign: "center",
   },
   portalOrRow: {
     alignItems: "center",
@@ -7348,7 +7774,7 @@ const styles = StyleSheet.create({
   portalAdminButton: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#a7f3d0",
+    borderColor: "#bfdbfe",
     borderRadius: 999,
     borderWidth: 1.2,
     flexDirection: "row",
@@ -7356,7 +7782,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   portalAdminText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 14,
     fontWeight: "900",
   },
@@ -7376,7 +7802,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   portalFooterAuthor: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 0.3,
@@ -7389,7 +7815,7 @@ const styles = StyleSheet.create({
   header: {
     alignItems: "center",
     backgroundColor: "#fff",
-    borderColor: "#e1ebe5",
+    borderColor: "#e2e8f0",
     borderRadius: 16,
     borderWidth: 1,
     elevation: 4,
@@ -7400,7 +7826,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 14,
@@ -7421,22 +7847,22 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   headerSchool: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.2,
     textTransform: "uppercase",
   },
   headerTitle: {
-    color: "#2d4a3e",
+    color: "#0f172a",
     fontSize: 12,
     fontWeight: "800",
     marginTop: 2,
   },
   roleBadge: {
     alignSelf: "flex-start",
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
     borderRadius: 999,
     borderWidth: 1,
     marginTop: 5,
@@ -7444,7 +7870,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   roleBadgeText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 9.5,
     fontWeight: "900",
     letterSpacing: 0.2,
@@ -7480,7 +7906,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 10,
-    paddingBottom: 116,
+    paddingBottom: 160,
   },
   sectionTabsWrap: {
     marginBottom: 12,
@@ -7503,10 +7929,10 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   sectionTabButtonActive: {
-    backgroundColor: "#047857",
-    borderColor: "#047857",
+    backgroundColor: "#2563eb",
+    borderColor: "#2563eb",
     elevation: 2,
-    shadowColor: "#047857",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -7524,235 +7950,1361 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   teacherHomeShell: {
-    gap: 12,
+    gap: 14,
+    paddingBottom: 24,
   },
-  teacherClassCard: {
-    backgroundColor: "#047857",
-    borderRadius: 12,
-    elevation: 4,
-    minHeight: 124,
-    overflow: "hidden",
-    padding: 12,
-    position: "relative",
-    shadowColor: "#047857",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
+  teacherProfileBanner: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    elevation: 3,
+    padding: 16,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
   },
-  teacherClassTopRow: {
+  teacherProfileBannerTop: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 9,
+    gap: 12,
   },
-  teacherClassLogoWrap: {
+  teacherAvatarCircle: {
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    height: 46,
+    backgroundColor: "#2563eb",
+    borderRadius: 24,
+    elevation: 4,
+    height: 48,
     justifyContent: "center",
-    width: 46,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    width: 48,
   },
-  teacherClassLogo: {
-    height: 40,
-    width: 40,
+  teacherAvatarInitials: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 0.5,
   },
-  teacherClassTextBlock: {
+  teacherProfileMeta: {
     flex: 1,
     minWidth: 0,
   },
-  teacherClassSchool: {
-    color: "#ffd15c",
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 0,
+  teacherGreetingSmall: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.6,
     textTransform: "uppercase",
   },
-  teacherClassMeta: {
-    color: "#ecfdf5",
-    fontSize: 9,
+  teacherProfileName: {
+    color: "#0f172a",
+    fontSize: 17,
     fontWeight: "800",
+    marginBottom: 2,
     marginTop: 2,
   },
-  teacherClassTitle: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "900",
-    marginTop: 18,
+  teacherDateSubtitle: {
+    color: "#64748b",
+    fontSize: 11.5,
+    fontWeight: "500",
   },
-  teacherClassYearRow: {
+  teacherVerifiedBadge: {
     alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 999,
+    borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
-    marginTop: 6,
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
   },
-  teacherClassYear: {
-    color: "#ecfdf5",
-    fontSize: 9,
+  teacherVerifiedBadgeText: {
+    color: "#2563eb",
+    fontSize: 10.5,
     fontWeight: "800",
   },
-  teacherClassArt: {
-    bottom: 8,
-    height: 92,
-    position: "absolute",
-    right: 6,
-    width: 150,
+  teacherProfileTagsRow: {
+    alignItems: "center",
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 14,
+    paddingTop: 12,
   },
-  teacherClassArtImage: {
-    height: "100%",
-    width: "100%",
+  teacherClassTag: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  teacherStatsGrid: {
+  teacherClassTagText: {
+    color: "#1d4ed8",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  teacherStudentsTag: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  teacherStudentsTagText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  actionCardModern: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    elevation: 3,
+    gap: 14,
+    padding: 16,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+  },
+  actionCardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+  },
+  actionIconBubble: {
+    alignItems: "center",
+    borderRadius: 14,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  actionHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  actionCardTitle: {
+    color: "#0f172a",
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  actionCardSubtitle: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  primaryBlueButton: {
+    alignItems: "center",
+    backgroundColor: "#2563eb",
+    borderRadius: 14,
+    elevation: 4,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+  },
+  primaryBlueButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  primarySapphireButton: {
+    alignItems: "center",
+    backgroundColor: "#1d4ed8",
+    borderRadius: 14,
+    elevation: 4,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    shadowColor: "#1d4ed8",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+  },
+  attendanceCounterRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  attendanceCounterPill: {
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    paddingVertical: 10,
+  },
+  attendanceCounterNum: {
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 2,
+  },
+  attendanceCounterLabel: {
+    color: "#64748b",
+    fontSize: 10.5,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  modernSection: {
+    gap: 10,
+    marginTop: 6,
+  },
+  modernSectionTitle: {
+    color: "#0f172a",
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  modernSectionSubtitle: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: -6,
+  },
+  toolsGrid2x2: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 10,
+    marginTop: 4,
   },
-  teacherStatCard: {
+  modernToolCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 6,
+    padding: 14,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    width: "48.4%",
+  },
+  toolIconBox: {
     alignItems: "center",
-    borderRadius: 10,
+    borderRadius: 11,
+    height: 38,
+    justifyContent: "center",
+    marginBottom: 4,
+    width: 38,
+  },
+  toolTitle: {
+    color: "#0f172a",
+    fontSize: 13.5,
+    fontWeight: "800",
+  },
+  toolDescription: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "500",
+    lineHeight: 15,
+  },
+  modernHelpCard: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    borderWidth: 1.5,
     flexDirection: "row",
-    flexBasis: "48%",
-    flexGrow: 1,
     gap: 12,
-    minHeight: 82,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
+    marginTop: 4,
+    padding: 14,
   },
-  teacherStatBlue: {
-    backgroundColor: "#eaf3ff",
-  },
-  teacherStatGreen: {
-    backgroundColor: "#e9f9ef",
-  },
-  teacherStatRed: {
-    backgroundColor: "#fff0ef",
-  },
-  teacherStatAmber: {
-    backgroundColor: "#fff6df",
-  },
-  teacherStatIconWrap: {
+  helpIconBox: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.66)",
-    borderRadius: 999,
-    height: 46,
-    justifyContent: "center",
-    width: 46,
-  },
-  teacherStatIcon: {
-    color: "#1d7fdb",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  teacherStatIconImage: {
-    height: 22,
-    width: 22,
-  },
-  teacherStatBody: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  teacherStatLabel: {
-    color: "#617089",
-    fontSize: 9,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-  teacherStatValue: {
-    color: "#047857",
-    fontSize: 24,
-    fontWeight: "900",
-    lineHeight: 26,
-    marginTop: 2,
-  },
-  teacherStatMeta: {
-    color: "#64748b",
-    fontSize: 9,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  teacherFeatureSection: {
-    marginTop: 2,
-  },
-  teacherSectionTitleWrap: {
-    alignSelf: "flex-start",
-    marginBottom: 8,
-  },
-  teacherSectionTitle: {
-    color: "#064e3b",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  teacherSectionMeta: {
-    color: "#64748b",
-    fontSize: 10.5,
-    fontWeight: "600",
-    marginTop: 1,
-  },
-  teacherSectionUnderline: {
-    backgroundColor: "#f2b02e",
-    borderRadius: 999,
-    height: 2,
-    marginTop: 2,
-    width: 42,
-  },
-  teacherFeatureList: {
-    backgroundColor: "#fff",
-    borderColor: "#e7eef7",
+    backgroundColor: "#eff6ff",
     borderRadius: 12,
-    borderWidth: 1,
-    elevation: 3,
-    overflow: "hidden",
-    shadowColor: "#06372b",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-  },
-  teacherFeatureItem: {
-    alignItems: "center",
-    borderBottomColor: "#eef3f8",
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 58,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  teacherFeatureIcon: {
-    alignItems: "center",
-    backgroundColor: "#eef5ff",
-    borderRadius: 8,
-    height: 34,
+    height: 38,
     justifyContent: "center",
-    width: 34,
+    width: 38,
   },
-  teacherFeatureIconText: {
-    color: "#2457d6",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  teacherFeatureIconImage: {
-    height: 17,
-    tintColor: "#2457d6",
-    width: 17,
-  },
-  teacherFeatureBody: {
+  helpTextBox: {
     flex: 1,
     minWidth: 0,
   },
-  teacherFeatureTitle: {
-    color: "#064e3b",
-    fontSize: 11,
-    fontWeight: "900",
+  helpTitle: {
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 2,
   },
-  teacherFeatureMeta: {
-    color: "#667085",
-    fontSize: 9,
+  helpSub: {
+    color: "#2563eb",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  /* ATTENDANCE MARKER MODERN STYLES */
+  attendanceMarkerShell: {
+    gap: 12,
+    paddingBottom: 20,
+  },
+  attHeaderCard: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 2,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: 14,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+  },
+  attHeaderLeft: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    flex: 1,
+  },
+  attCalendarIconBox: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderRadius: 12,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  attHeaderTextCol: {
+    flex: 1,
+  },
+  attHeaderEyebrow: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  attHeaderDateTitle: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  attCountBadge: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  attCountBadgeText: {
+    color: "#1d4ed8",
+    fontSize: 11.5,
     fontWeight: "700",
+  },
+  attTallyRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  attTallyPill: {
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    paddingVertical: 9,
+  },
+  attTallyNum: {
+    fontSize: 17,
+    fontWeight: "900",
+    marginBottom: 1,
+  },
+  attTallyLabel: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  attQuickFillCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    elevation: 1,
+    gap: 8,
+    padding: 12,
+  },
+  attQuickFillTitle: {
+    color: "#475569",
+    fontSize: 11.5,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  attQuickFillButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  attQuickBtn: {
+    alignItems: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 5,
+    justifyContent: "center",
+    paddingVertical: 8,
+  },
+  attQuickBtnPresent: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+  },
+  attQuickBtnAbsent: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+  },
+  attQuickBtnLate: {
+    backgroundColor: "#fffbeb",
+    borderColor: "#fde68a",
+  },
+  attQuickBtnTextPresent: {
+    color: "#16a34a",
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  attQuickBtnTextAbsent: {
+    color: "#dc2626",
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  attQuickBtnTextLate: {
+    color: "#d97706",
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  attStudentCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 12,
+    padding: 14,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  attStudentHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  attStudentAvatar: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 20,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  attStudentAvatarText: {
+    color: "#2563eb",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  attStudentMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  attStudentName: {
+    color: "#0f172a",
+    fontSize: 14.5,
+    fontWeight: "800",
+  },
+  attStudentRoll: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "500",
     marginTop: 2,
   },
-  teacherFeatureChevron: {
-    color: "#667085",
-    fontSize: 24,
+  attStatusRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  attStatusBtn: {
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    flex: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: 6,
+  },
+  attBtnPresentActive: {
+    backgroundColor: "#16a34a",
+    borderColor: "#16a34a",
+  },
+  attBtnPresentInactive: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+  },
+  attBtnAbsentActive: {
+    backgroundColor: "#dc2626",
+    borderColor: "#dc2626",
+  },
+  attBtnAbsentInactive: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+  },
+  attBtnLateActive: {
+    backgroundColor: "#d97706",
+    borderColor: "#d97706",
+  },
+  attBtnLateInactive: {
+    backgroundColor: "#fffbeb",
+    borderColor: "#fde68a",
+  },
+  attStatusBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  attTextActive: {
+    color: "#ffffff",
+  },
+  attSaveButton: {
+    alignItems: "center",
+    backgroundColor: "#2563eb",
+    borderRadius: 16,
+    elevation: 4,
+    justifyContent: "center",
+    marginTop: 6,
+    paddingVertical: 14,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+  },
+  attSaveButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+
+  /* STUDENT LIST MODERN STYLES */
+  studentListShell: {
+    gap: 12,
+    paddingBottom: 20,
+  },
+  studentSearchCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 8,
+    padding: 12,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  studentSearchRow: {
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  studentSearchInput: {
+    color: "#0f172a",
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: "600",
+    padding: 0,
+  },
+  studentSearchMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+  },
+  studentSearchCountText: {
+    color: "#64748b",
+    fontSize: 11,
     fontWeight: "700",
+  },
+  studentDirectoryCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 10,
+    padding: 14,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  studentDirTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  studentDirAvatar: {
+    alignItems: "center",
+    backgroundColor: "#2563eb",
+    borderRadius: 20,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  studentDirAvatarText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  studentDirMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  studentDirName: {
+    color: "#0f172a",
+    fontSize: 14.5,
+    fontWeight: "800",
+  },
+  studentDirRoll: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  studentDirAdm: {
+    color: "#94a3b8",
+    fontSize: 10.5,
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  studentDirActionRow: {
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    paddingTop: 8,
+  },
+  studentDirCallBtn: {
+    alignItems: "center",
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 7,
+  },
+  studentDirCallText: {
+    color: "#16a34a",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  /* CLASS ATTENDANCE REPORTS MODERN STYLES */
+  repPageShell: {
+    gap: 12,
+    paddingBottom: 24,
+  },
+  repMonthNavCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 10,
+    padding: 14,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  repMonthTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  repMonthChevronBtn: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  repMonthCenter: {
+    alignItems: "center",
+    flex: 1,
+    gap: 3,
+  },
+  repMonthTitle: {
+    color: "#0f172a",
+    fontSize: 16.5,
+    fontWeight: "800",
+  },
+  repClassBadge: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 10,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  repClassBadgeText: {
+    color: "#1d4ed8",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  repQuickPillsRow: {
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    paddingTop: 10,
+  },
+  repQuickPill: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  repQuickPillActive: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb",
+  },
+  repQuickPillText: {
+    color: "#64748b",
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+  repQuickPillTextActive: {
+    color: "#2563eb",
+  },
+  repOverviewCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 3,
+    gap: 12,
+    padding: 16,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+  },
+  repOverviewTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  repOverviewScoreWrap: {
+    gap: 2,
+  },
+  repOverviewEyebrow: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  repOverviewScore: {
+    color: "#0f172a",
+    fontSize: 26,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+  },
+  repStatusTag: {
+    alignItems: "center",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  repStatusTagGood: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+  },
+  repStatusTagWarn: {
+    backgroundColor: "#fffbeb",
+    borderColor: "#fde68a",
+  },
+  repStatusTagText: {
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  repProgressTrack: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 999,
+    height: 8,
+    overflow: "hidden",
+    width: "100%",
+  },
+  repProgressFill: {
+    backgroundColor: "#16a34a",
+    borderRadius: 999,
+    height: "100%",
+  },
+  repTallyGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  repTallyPill: {
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    paddingVertical: 9,
+  },
+  repTallyNum: {
+    fontSize: 17,
+    fontWeight: "900",
+    marginBottom: 1,
+  },
+  repTallyLabel: {
+    color: "#64748b",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
+  repEmptyCard: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 8,
+    padding: 24,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+  },
+  repEmptyIconCircle: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderRadius: 32,
+    height: 64,
+    justifyContent: "center",
+    marginBottom: 4,
+    width: 64,
+  },
+  repEmptyTitle: {
+    color: "#0f172a",
+    fontSize: 15,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  repEmptySub: {
+    color: "#64748b",
+    fontSize: 12.5,
+    fontWeight: "500",
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  repEmptyActionBtn: {
+    alignItems: "center",
+    backgroundColor: "#2563eb",
+    borderRadius: 14,
+    elevation: 3,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  repEmptyActionBtnText: {
+    color: "#ffffff",
+    fontSize: 13.5,
+    fontWeight: "800",
+  },
+  repViewSwitchCard: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 14,
+    flexDirection: "row",
+    padding: 3,
+  },
+  repViewBtn: {
+    alignItems: "center",
+    borderRadius: 11,
+    flex: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    paddingVertical: 8,
+  },
+  repViewBtnActive: {
+    backgroundColor: "#2563eb",
+    shadowColor: "#2563eb",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  repViewBtnText: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  repViewBtnTextActive: {
+    color: "#ffffff",
+    fontWeight: "800",
+  },
+  repRosterSection: {
+    gap: 10,
+  },
+  repSearchRow: {
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  repSearchInput: {
+    color: "#0f172a",
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    padding: 0,
+  },
+  repFilterChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  repChip: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  repChipActive: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb",
+  },
+  repChipText: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  repChipTextActive: {
+    color: "#2563eb",
+    fontWeight: "800",
+  },
+  repChipRiskActive: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#dc2626",
+  },
+  repChipRiskTextActive: {
+    color: "#dc2626",
+    fontWeight: "800",
+  },
+  repChipGoodActive: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#16a34a",
+  },
+  repChipGoodTextActive: {
+    color: "#16a34a",
+    fontWeight: "800",
+  },
+  repList: {
+    gap: 8,
+  },
+  repStudentCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 8,
+    padding: 12,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  repStudentTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  repStudentAvatar: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 18,
+    borderWidth: 1,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  repStudentAvatarText: {
+    color: "#2563eb",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  repStudentMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  repStudentName: {
+    color: "#0f172a",
+    fontSize: 13.5,
+    fontWeight: "800",
+  },
+  repStudentSub: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  repStudentPill: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  repStudentPillGreen: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#bbf7d0",
+  },
+  repStudentPillBlue: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+  },
+  repStudentPillRed: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+  },
+  repStudentPillText: {
+    fontSize: 11.5,
+    fontWeight: "900",
+  },
+  repStudentBarTrack: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 999,
+    height: 5,
+    overflow: "hidden",
+    width: "100%",
+  },
+  repStudentBarFill: {
+    borderRadius: 999,
+    height: "100%",
+  },
+  repStudentBottomRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  repStudentCountsText: {
+    color: "#94a3b8",
+    fontSize: 10.5,
+    fontWeight: "600",
+  },
+  repCallParentBtn: {
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  repCallParentText: {
+    color: "#dc2626",
+    fontSize: 10.5,
+    fontWeight: "700",
+  },
+  repDailySection: {
+    gap: 8,
+  },
+  repDailyHeaderTitle: {
+    color: "#0f172a",
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  repDailyList: {
+    gap: 8,
+  },
+  repDayCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 8,
+    padding: 12,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  repDayTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  repDayDateBox: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+  },
+  repDayDateNumber: {
+    color: "#1d4ed8",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  repDayDateMonth: {
+    color: "#2563eb",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  repDayMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  repDayFullDate: {
+    color: "#0f172a",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  repDayStatusText: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 1,
+  },
+  repDayTallyPills: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  repDayMiniPill: {
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  repDayMiniPillText: {
+    fontSize: 10.5,
+    fontWeight: "800",
+  },
+  repDayAbsentRow: {
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    paddingTop: 6,
+  },
+  repDayAbsentLabel: {
+    color: "#dc2626",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  repDayAbsentList: {
+    color: "#475569",
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  repDayAllPresentRow: {
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    alignItems: "center",
+    paddingTop: 6,
+  },
+  repDayAllPresentText: {
+    color: "#16a34a",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  
+  reportsPanelShell: {
+    gap: 12,
+    paddingBottom: 20,
+  },
+  monthNavCard: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e8f0",
+    borderRadius: 18,
+    borderWidth: 1.5,
+    elevation: 2,
+    gap: 10,
+    padding: 14,
+    shadowColor: "#0f172a",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+  },
+  monthNavTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  monthNavChevronBtn: {
+    alignItems: "center",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 12,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  monthNavCenter: {
+    alignItems: "center",
+    flex: 1,
+    gap: 2,
+  },
+  monthNavTitleText: {
+    color: "#0f172a",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  monthNavSubText: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  monthQuickPillsRow: {
+    borderTopColor: "#f1f5f9",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    paddingTop: 10,
+  },
+  monthQuickPill: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  monthQuickPillActive: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb",
+  },
+  monthQuickPillText: {
+    color: "#64748b",
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+  monthQuickPillTextActive: {
+    color: "#2563eb",
+  },
+
+  /* LEAVE PRESET BAR */
+  leavePresetBar: {
+    gap: 6,
+    marginBottom: 8,
+  },
+  leavePresetLabel: {
+    color: "#64748b",
+    fontSize: 10.5,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  leavePresetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  leavePresetPill: {
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  leavePresetPillActive: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#2563eb",
+  },
+  leavePresetPillText: {
+    color: "#475569",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  leavePresetPillTextActive: {
+    color: "#2563eb",
   },
   tabDock: {
     backgroundColor: "rgba(255, 255, 255, 0.98)",
@@ -7808,7 +9360,7 @@ const styles = StyleSheet.create({
     width: 44,
   },
   parentTabBadgeActive: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
   },
   parentTabBadgeIcon: {
     lineHeight: 22,
@@ -7823,7 +9375,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   parentTabBadgeTextActive: {
-    color: "#047857",
+    color: "#2563eb",
   },
   parentTabText: {
     color: "#64748b",
@@ -7833,13 +9385,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   parentTabTextActive: {
-    color: "#047857",
+    color: "#2563eb",
     fontWeight: "800",
   },
   studentHeaderBadge: {
     alignSelf: "flex-start",
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: "row",
@@ -7850,7 +9402,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   studentHeaderBadgeText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 0.3,
@@ -7871,14 +9423,14 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   studentHeroCard: {
-    backgroundColor: "#064e3b",
+    backgroundColor: "#1e3a8a",
     borderColor: "#059669",
     borderRadius: 22,
     borderWidth: 1,
     elevation: 6,
     overflow: "hidden",
     padding: 16,
-    shadowColor: "#047857",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
@@ -7918,7 +9470,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   studentHeroPortalLabel: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 8.5,
     fontWeight: "800",
     letterSpacing: 0.4,
@@ -7936,7 +9488,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   studentVerifiedBadgeText: {
-    color: "#ecfdf5",
+    color: "#eff6ff",
     fontSize: 9.5,
     fontWeight: "800",
   },
@@ -7977,7 +9529,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   studentHeroGreeting: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -8006,7 +9558,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   studentHeroPillText: {
-    color: "#ecfdf5",
+    color: "#eff6ff",
     fontSize: 10,
     fontWeight: "800",
   },
@@ -8027,7 +9579,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   studentHeroFooterText: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 10,
     fontWeight: "700",
   },
@@ -8048,7 +9600,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     elevation: 3,
     padding: 15,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 10,
@@ -8060,7 +9612,7 @@ const styles = StyleSheet.create({
   },
   studentCardHeaderIcon: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderRadius: 10,
     height: 34,
     justifyContent: "center",
@@ -8090,7 +9642,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   studentCardHeaderLinkText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 10.5,
     fontWeight: "800",
   },
@@ -8114,7 +9666,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   studentAttendancePercentText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 24,
     fontWeight: "900",
   },
@@ -8164,7 +9716,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   studentMetricPresent: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
   },
   studentMetricAbsent: {
     backgroundColor: "#fff1f2",
@@ -8222,7 +9774,7 @@ const styles = StyleSheet.create({
     minHeight: 110,
     padding: 13,
     position: "relative",
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -8264,7 +9816,7 @@ const styles = StyleSheet.create({
   },
   studentHelpdeskCard: {
     backgroundColor: "#ffffff",
-    borderColor: "#d1fae5",
+    borderColor: "#dbeafe",
     borderRadius: 18,
     borderWidth: 1,
     elevation: 2,
@@ -8277,7 +9829,7 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   studentHelpdeskTitle: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 12.5,
     fontWeight: "900",
   },
@@ -8295,8 +9847,8 @@ const styles = StyleSheet.create({
   },
   studentHelpdeskBtn: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
@@ -8305,7 +9857,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   studentHelpdeskBtnText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 10.5,
     fontWeight: "800",
   },
@@ -8327,7 +9879,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   studentAttBannerEyebrow: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 9.5,
     fontWeight: "900",
     letterSpacing: 0.6,
@@ -8339,15 +9891,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   studentAttBannerPill: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
     borderRadius: 999,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   studentAttBannerPillText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 11,
     fontWeight: "800",
   },
@@ -8386,15 +9938,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     padding: 11,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
     shadowRadius: 6,
   },
   studentAttDateBadge: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
     borderRadius: 12,
     borderWidth: 1,
     height: 44,
@@ -8402,7 +9954,7 @@ const styles = StyleSheet.create({
     width: 44,
   },
   studentAttDayNumber: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 16,
     fontWeight: "900",
     lineHeight: 18,
@@ -8444,8 +9996,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   studentAttPillPresent: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
   },
   studentAttPillAbsent: {
     backgroundColor: "#fff1f2",
@@ -8460,20 +10012,20 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   digitalIdCard: {
-    backgroundColor: "#064e3b",
+    backgroundColor: "#1e3a8a",
     borderColor: "#059669",
     borderRadius: 22,
     borderWidth: 1,
     elevation: 6,
     overflow: "hidden",
-    shadowColor: "#047857",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.22,
     shadowRadius: 18,
   },
   digitalIdHeader: {
     alignItems: "center",
-    backgroundColor: "#047857",
+    backgroundColor: "#2563eb",
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 16,
@@ -8505,7 +10057,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   digitalIdSubtitle: {
-    color: "#ecfdf5",
+    color: "#eff6ff",
     fontSize: 8.5,
     fontWeight: "800",
     letterSpacing: 0.3,
@@ -8518,7 +10070,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   digitalIdChipText: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontSize: 8.5,
     fontWeight: "900",
   },
@@ -8572,12 +10124,12 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   digitalIdTagText: {
-    color: "#ecfdf5",
+    color: "#eff6ff",
     fontSize: 10,
     fontWeight: "800",
   },
   digitalIdStudentAdm: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 9.5,
     fontWeight: "700",
     marginTop: 4,
@@ -8600,7 +10152,7 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   digitalIdBarcodeNumber: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 8.5,
     fontWeight: "800",
   },
@@ -8612,7 +10164,7 @@ const styles = StyleSheet.create({
   },
   profileSectionIconWrap: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderRadius: 8,
     height: 26,
     justifyContent: "center",
@@ -8671,8 +10223,8 @@ const styles = StyleSheet.create({
   },
   teacherHeaderBadge: {
     alignSelf: "flex-start",
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
     borderRadius: 999,
     borderWidth: 1,
     flexDirection: "row",
@@ -8683,7 +10235,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   teacherHeaderBadgeText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 0.3,
@@ -8706,14 +10258,14 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   teacherHeroCard: {
-    backgroundColor: "#064e3b",
+    backgroundColor: "#1e3a8a",
     borderColor: "#059669",
     borderRadius: 22,
     borderWidth: 1,
     elevation: 6,
     overflow: "hidden",
     padding: 16,
-    shadowColor: "#047857",
+    shadowColor: "#2563eb",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
@@ -8753,7 +10305,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   teacherHeroPortalLabel: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 8.5,
     fontWeight: "800",
     letterSpacing: 0.4,
@@ -8771,7 +10323,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   teacherVerifiedBadgeText: {
-    color: "#ecfdf5",
+    color: "#eff6ff",
     fontSize: 9.5,
     fontWeight: "800",
   },
@@ -8793,7 +10345,7 @@ const styles = StyleSheet.create({
   },
   teacherHeroAvatarInner: {
     alignItems: "center",
-    backgroundColor: "#047857",
+    backgroundColor: "#2563eb",
     borderRadius: 999,
     height: 56,
     justifyContent: "center",
@@ -8820,7 +10372,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   teacherHeroGreeting: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 11,
     fontWeight: "700",
   },
@@ -8849,7 +10401,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   teacherHeroPillText: {
-    color: "#ecfdf5",
+    color: "#eff6ff",
     fontSize: 10,
     fontWeight: "800",
   },
@@ -8870,7 +10422,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   teacherHeroFooterText: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 10,
     fontWeight: "700",
   },
@@ -8891,7 +10443,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     elevation: 3,
     padding: 15,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 10,
@@ -8904,7 +10456,7 @@ const styles = StyleSheet.create({
   },
   teacherCardHeaderIcon: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderRadius: 10,
     height: 36,
     justifyContent: "center",
@@ -8936,7 +10488,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   teacherCardHeaderLinkText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 11,
     fontWeight: "800",
   },
@@ -8960,7 +10512,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   teacherAttendancePercentText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 26,
     fontWeight: "900",
   },
@@ -9010,7 +10562,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f0f9ff",
   },
   teacherMetricPresent: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
   },
   teacherMetricAbsent: {
     backgroundColor: "#fff1f2",
@@ -9050,7 +10602,7 @@ const styles = StyleSheet.create({
     minHeight: 110,
     padding: 13,
     position: "relative",
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -9099,7 +10651,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     padding: 12,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
     shadowRadius: 6,
@@ -9156,15 +10708,15 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   attendanceBulkPresent: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
   },
   attendanceBulkAbsent: {
     backgroundColor: "#fff1f2",
     borderColor: "#fecdd3",
   },
   attendanceBulkBtnTextPresent: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 10.5,
     fontWeight: "800",
   },
@@ -9181,14 +10733,14 @@ const styles = StyleSheet.create({
   },
   attendanceAvatar: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderRadius: 10,
     height: 36,
     justifyContent: "center",
     width: 36,
   },
   attendanceAvatarText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 12,
     fontWeight: "900",
   },
@@ -9196,12 +10748,12 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   marksHeroShell: {
-    backgroundColor: "#064e3b",
+    backgroundColor: "#1e3a8a",
     borderRadius: 20,
     elevation: 3,
     marginBottom: 12,
     padding: 16,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 10,
@@ -9221,7 +10773,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   marksHeroBadgeText: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 10.5,
     fontWeight: "800",
   },
@@ -9232,7 +10784,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   marksHeroSub: {
-    color: "#a7f3d0",
+    color: "#bfdbfe",
     fontSize: 11.5,
     fontWeight: "600",
     marginTop: 2,
@@ -9256,12 +10808,12 @@ const styles = StyleSheet.create({
     borderColor: "#ffffff",
   },
   marksTerminalPillText: {
-    color: "#d1fae5",
+    color: "#dbeafe",
     fontSize: 11,
     fontWeight: "800",
   },
   marksTerminalPillTextActive: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontWeight: "900",
   },
   marksStudentSpotlightCard: {
@@ -9272,7 +10824,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginBottom: 12,
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
@@ -9284,7 +10836,7 @@ const styles = StyleSheet.create({
   },
   marksStudentAvatarWrap: {
     alignItems: "center",
-    backgroundColor: "#047857",
+    backgroundColor: "#2563eb",
     borderRadius: 999,
     height: 44,
     justifyContent: "center",
@@ -9310,15 +10862,15 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   marksStudentRollPill: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
     borderRadius: 6,
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 2,
   },
   marksStudentRollText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 10.5,
     fontWeight: "800",
   },
@@ -9373,7 +10925,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   marksRosterToggleText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 11,
     fontWeight: "800",
   },
@@ -9408,8 +10960,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   marksRosterItemActive: {
-    backgroundColor: "#ecfdf5",
-    borderColor: "#a7f3d0",
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
   },
   marksRosterItemName: {
     color: "#0f172a",
@@ -9436,7 +10988,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   marksSummaryHeaderTitle: {
-    color: "#064e3b",
+    color: "#1e3a8a",
     fontSize: 12.5,
     fontWeight: "900",
   },
@@ -9448,7 +11000,7 @@ const styles = StyleSheet.create({
   marksSummaryBox: {
     alignItems: "center",
     backgroundColor: "#ffffff",
-    borderColor: "#d1fae5",
+    borderColor: "#dbeafe",
     borderRadius: 12,
     borderWidth: 1,
     flex: 1,
@@ -9456,7 +11008,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   marksSummaryBoxNum: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 16,
     fontWeight: "900",
   },
@@ -9475,7 +11027,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginBottom: 10,
     padding: 14,
-    shadowColor: "#06372b",
+    shadowColor: "#0f172a",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.03,
     shadowRadius: 8,
@@ -9488,7 +11040,7 @@ const styles = StyleSheet.create({
   },
   marksItemIconWrap: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderRadius: 10,
     height: 34,
     justifyContent: "center",
@@ -9517,7 +11069,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   marksItemScoreText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 11,
     fontWeight: "900",
   },
@@ -9567,7 +11119,7 @@ const styles = StyleSheet.create({
   },
   marksNextStudentAction: {
     alignItems: "center",
-    backgroundColor: "#ecfdf5",
+    backgroundColor: "#eff6ff",
     borderColor: "#10b981",
     borderRadius: 14,
     borderWidth: 1,
@@ -9579,7 +11131,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   marksNextStudentText: {
-    color: "#047857",
+    color: "#2563eb",
     fontSize: 12.5,
     fontWeight: "900",
   },
