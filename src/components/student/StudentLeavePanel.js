@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { formatDisplayDate } from "../../utils/date";
+import { formatDisplayDate, todayIso } from "../../utils/date";
 import { getStudentLeaves, submitStudentLeave } from "../../api/client";
 import { colors } from "../../theme/colors";
 
@@ -62,12 +62,12 @@ export default function StudentLeavePanel({ session }) {
 
   const submit = async () => {
     if (!fromDate || !toDate || !reason.trim()) {
-      setError("From date, to date aur reason required hai.");
+      setError("Please select from date, to date, and reason for leave.");
       return;
     }
 
     if (!session?.token) {
-      setError("Session missing hai.");
+      setError("Session expired. Please log in again.");
       return;
     }
 
@@ -130,6 +130,58 @@ export default function StudentLeavePanel({ session }) {
           </View>
         ) : null}
 
+        <View style={styles.presetBar}>
+          <Text style={styles.presetLabel}>Quick Duration Preset</Text>
+          <View style={styles.presetRow}>
+            <Pressable
+              onPress={() => {
+                const s = todayIso();
+                setFromDate(s);
+                setToDate(s);
+              }}
+              style={styles.presetPill}
+            >
+              <Text style={styles.presetPillText}>Today (1 Day)</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const tm = new Date();
+                tm.setDate(tm.getDate() + 1);
+                const s = tm.toISOString().slice(0, 10);
+                setFromDate(s);
+                setToDate(s);
+              }}
+              style={styles.presetPill}
+            >
+              <Text style={styles.presetPillText}>Tomorrow</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const s1 = todayIso();
+                const d2 = new Date();
+                d2.setDate(d2.getDate() + 1);
+                setFromDate(s1);
+                setToDate(d2.toISOString().slice(0, 10));
+              }}
+              style={styles.presetPill}
+            >
+              <Text style={styles.presetPillText}>2 Days</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const s1 = todayIso();
+                const d3 = new Date();
+                d3.setDate(d3.getDate() + 2);
+                setFromDate(s1);
+                setToDate(d3.toISOString().slice(0, 10));
+              }}
+              style={styles.presetPill}
+            >
+              <Text style={styles.presetPillText}>3 Days</Text>
+            </Pressable>
+          </View>
+        </View>
+
         <View style={styles.grid}>
           <View style={styles.half}>
             <Text style={styles.label}>From Date</Text>
@@ -190,7 +242,7 @@ export default function StudentLeavePanel({ session }) {
       ) : null}
 
       {!loading && !requests.length ? (
-        <EmptyState title="No leave requests" text="Abhi tak koi leave request submit nahi hui." />
+        <EmptyState title="No Leave Requests" text="You have not submitted any leave applications yet." />
       ) : null}
     </View>
   );
@@ -344,6 +396,35 @@ const styles = StyleSheet.create({
   },
   menuItemTextActive: {
     color: colors.primaryDark,
+  },
+  presetBar: {
+    marginBottom: 12,
+    gap: 6,
+  },
+  presetLabel: {
+    color: "#64748b",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  presetRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  presetPill: {
+    backgroundColor: "#eff6ff",
+    borderColor: "#bfdbfe",
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  presetPillText: {
+    color: "#1d4ed8",
+    fontSize: 11,
+    fontWeight: "700",
   },
   submitButton: {
     alignItems: "center",
